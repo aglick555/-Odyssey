@@ -1,45 +1,18 @@
-# Odyssey
+# Odyssey Codebase Export
 
-Custom capital flow rendering engine + product UI.
+This archive contains the conversation-built React/TSX snapshots of the Portfolio OS / Odyssey work.
 
-## What this repo contains
+Included:
+- `PortfolioOSOdysseyV2Scaffold.tsx`
+- `PortfolioOSOdysseyDataDriven.tsx`
+- `PortfolioOSOdysseyV7Cinematic.tsx`
+- `PortfolioOSOdysseyV8RiverSystem.tsx`
+- `PortfolioOSOdysseyV9TrueRiverPhysics.tsx`
+- `PortfolioOSOdysseyV10UnifiedRiverSystem.tsx`
+- `PortfolioOSOdysseyV12ArtDirectionLayer.tsx`
 
-- React + Vite application shell
-- Custom flow rendering engine (not a standard Sankey)
-- Deterministic layout + routing system
-- Bundle lane reservation
-- Thickness conservation + junction shaping
-
-## Current capabilities
-
-- Multi-strand capital flows
-- Scenario overlay (actual / robust / delta)
-- Confidence / uncertainty bands
-- Residual / leakage channels
-- Product-style UI wrapper
-
-## Architecture
-
-/src
-  /odyssey
-    /engine       -> layout, routing, flow math
-    /components   -> renderer + UI primitives
-    /data         -> demo dataset
-
-## Status
-
-- Engine is functional and deterministic
-- Visual system is approaching "river physics"
-- Next step: move to Canvas / Pixi for strand-field rendering
-
-## Run locally
-
-npm install
-npm run dev
-
-## Next steps
-
-- Canvas/WebGL renderer
-- Path-level interaction
-- Real portfolio data integration
-- Scenario engine integration
+Notes:
+- These are snapshot files generated during the design/code exploration.
+- The most advanced visual file in this export is:
+  `src/PortfolioOSOdysseyV12ArtDirectionLayer.tsx`
+- They are intentionally preserved as separate versions so you can inspect the evolution.
