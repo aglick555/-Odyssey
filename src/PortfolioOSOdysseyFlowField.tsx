@@ -145,6 +145,10 @@ function blend(a: number, b: number, t: number) {
   return a + (b - a) * t;
 }
 
+function compressionEnvelope(t: number, power = 2.6) {
+  return Math.pow(Math.sin(Math.PI * clamp(t, 0, 1)), power);
+}
+
 function buildBundleCenterline(edge: RoutedEdge) {
   const x1 = edge.fromNode.x + edge.fromNode.w;
   const x2 = edge.toNode.x;
@@ -189,11 +193,11 @@ function offsetCurvePoints(points: Point[], resolver: (t: number, nx: number, ny
 
 function buildStrandPoints(points: Point[], baseOffset: number, time: number, seed: number) {
   return offsetCurvePoints(points, (t) => {
-    const compression = Math.pow(Math.sin(Math.PI * t), 2.2);
-    const waveA = Math.sin(seed + t * 10.8 + time * 0.92) * (2.2 + Math.abs(baseOffset) * 0.032);
-    const waveB = Math.cos(seed * 0.69 + t * 16.2 - time * 1.04) * (1.05 + Math.abs(baseOffset) * 0.018);
-    const contractedOffset = baseOffset * (1 - compression * 0.92);
-    return contractedOffset + (waveA + waveB) * (0.12 + (1 - compression) * 0.44);
+    const compression = compressionEnvelope(t, 2.55);
+    const waveA = Math.sin(seed * 0.74 + t * 7.8 + time * 0.58) * (1.24 + Math.abs(baseOffset) * 0.017);
+    const waveB = Math.cos(seed * 0.41 + t * 12.4 - time * 0.64) * (0.56 + Math.abs(baseOffset) * 0.008);
+    const contractedOffset = baseOffset * (1 - compression * 0.96);
+    return contractedOffset + (waveA + waveB) * (0.045 + (1 - compression) * 0.24);
   });
 }
 
@@ -260,6 +264,26 @@ function paintGlowTrail(
   }
 }
 
+function paintCompressionCorridor(
+  ctx: CanvasRenderingContext2D,
+  points: Point[],
+  color: string,
+  radius: number,
+  alpha: number,
+  from = 0.22,
+  to = 0.78,
+  stride = 3,
+) {
+  if (points.length === 0) return;
+  const start = Math.floor((points.length - 1) * from);
+  const end = Math.floor((points.length - 1) * to);
+  for (let index = start; index <= end; index += stride) {
+    const localT = (index - start) / Math.max(1, end - start);
+    const energy = 0.56 + Math.pow(Math.sin(localT * Math.PI), 1.18) * 1.04;
+    paintGlowCircle(ctx, points[index].x, points[index].y, radius * energy, color, alpha * energy);
+  }
+}
+
 function drawMassOffsets(
   ctx: CanvasRenderingContext2D,
   points: Point[],
@@ -268,22 +292,43 @@ function drawMassOffsets(
   opacity: number,
   blur: number,
 ) {
-  const offsets = [-0.92, -0.66, -0.42, -0.18, 0.18, 0.42, 0.66, 0.92];
+  const offsets = [-1.08, -0.86, -0.64, -0.42, -0.2, 0.2, 0.42, 0.64, 0.86, 1.08];
   offsets.forEach((ratio, index) => {
     const bodyPoints = offsetCurvePoints(points, (t) => {
-      const compression = Math.pow(Math.sin(Math.PI * t), 2.3);
-      const softened = ratio * thickness * 0.32 * (1 - compression * 0.9);
-      const drift = Math.sin(index * 1.7 + t * 8.6) * thickness * 0.01;
+      const compression = compressionEnvelope(t, 2.8);
+      const softened = ratio * thickness * 0.42 * (1 - compression * 0.94);
+      const drift = Math.sin(index * 1.4 + t * 5.8) * thickness * 0.0045;
       return softened + drift;
     });
     drawPolyline(
       ctx,
       bodyPoints,
-      rgba(color, 0.028 + Math.max(0, 0.022 - Math.abs(ratio) * 0.012)),
-      thickness * (0.58 - Math.abs(ratio) * 0.18),
+      rgba(color, 0.038 + Math.max(0, 0.028 - Math.abs(ratio) * 0.012)),
+      thickness * (0.86 - Math.abs(ratio) * 0.2),
       { blur, alpha: opacity },
     );
   });
+}
+
+function drawBodyPass(
+  ctx: CanvasRenderingContext2D,
+  points: Point[],
+  color: string,
+  thickness: number,
+  opacity: number,
+  emphasis = 1,
+) {
+  const haloWidth = clamp(thickness * (2.1 + emphasis * 0.24), 18, 150);
+  const bodyWidth = clamp(thickness * (1.26 + emphasis * 0.12), 12, 104);
+  const coreWidth = clamp(thickness * (0.42 + emphasis * 0.04), 4, 28);
+
+  drawPolyline(ctx, points, rgba("#ffffff", 0.024 + emphasis * 0.004), haloWidth, { blur: 92, alpha: opacity });
+  drawPolyline(ctx, points, rgba(color, 0.045 + emphasis * 0.008), haloWidth * 0.84, { blur: 68, alpha: opacity });
+  drawPolyline(ctx, points, rgba(color, 0.078 + emphasis * 0.012), bodyWidth, { blur: 38, alpha: opacity });
+  drawMassOffsets(ctx, points, color, clamp(thickness * (0.9 + emphasis * 0.06), 10, 82), opacity, 28);
+  drawPolyline(ctx, points, rgba(color, 0.14 + emphasis * 0.02), coreWidth, { blur: 12, alpha: opacity });
+  paintCompressionCorridor(ctx, points, color, clamp(thickness * (0.56 + emphasis * 0.06), 10, 56), (0.03 + emphasis * 0.004) * opacity, 0.18, 0.84, 3);
+  paintCompressionCorridor(ctx, points, "#ffffff", clamp(thickness * (0.24 + emphasis * 0.03), 4, 22), (0.015 + emphasis * 0.003) * opacity, 0.28, 0.72, 4);
 }
 
 function fillBackground(ctx: CanvasRenderingContext2D, time: number) {
@@ -295,6 +340,8 @@ function fillBackground(ctx: CanvasRenderingContext2D, time: number) {
   paintGlowCircle(ctx, FLOW_WIDTH * 0.52, FLOW_HEIGHT * 0.5, 260 + Math.sin(time * 0.35) * 22, "#6fe6ff", 0.08);
   paintGlowCircle(ctx, FLOW_WIDTH * 0.46, FLOW_HEIGHT * 0.49, 220, "#7ec4ff", 0.06);
   paintGlowCircle(ctx, FLOW_WIDTH * 0.59, FLOW_HEIGHT * 0.47, 250, "#53d2d2", 0.05);
+  paintGlowCircle(ctx, FLOW_WIDTH * 0.52, FLOW_HEIGHT * 0.51, 340 + Math.sin(time * 0.24) * 20, "#9be7ff", 0.1);
+  paintGlowCircle(ctx, FLOW_WIDTH * 0.52, FLOW_HEIGHT * 0.51, 170, "#ffffff", 0.026);
   ctx.save();
   const vignette = ctx.createLinearGradient(0, 0, 0, FLOW_HEIGHT);
   vignette.addColorStop(0, "rgba(0,0,0,0.02)");
@@ -413,14 +460,8 @@ function renderFlowField(
   preparedBundles.forEach((entry) => {
     const active = activeBundles.has(entry.bundle.key);
     const opacity = hoveredId ? (active ? 1 : 0.15) : 1;
-    const haloWidth = clamp(entry.thickness * 1.15, 18, 118);
-    const bodyWidth = clamp(entry.thickness * 0.82, 12, 84);
-    drawPolyline(ctx, entry.points, rgba("#ffffff", 0.055), haloWidth, { blur: 54, alpha: opacity });
-    drawPolyline(ctx, entry.points, rgba(entry.color, 0.13), bodyWidth, { blur: 34, alpha: opacity });
-    drawMassOffsets(ctx, entry.points, entry.color, clamp(entry.thickness * 0.72, 10, 70), opacity, 22);
-    drawPolyline(ctx, entry.points, rgba(entry.color, 0.24), clamp(entry.thickness * 0.18, 4, 18), { blur: 7, alpha: opacity });
-    paintGlowTrail(ctx, entry.points, entry.color, clamp(entry.thickness * 0.28, 8, 38), 0.048 * opacity, 0.14, 0.88, 3);
-    paintGlowCircle(ctx, entry.focusPoint.x, entry.focusPoint.y, clamp(entry.thickness * 0.72, 22, 90), entry.color, 0.12 * opacity);
+    drawBodyPass(ctx, entry.points, entry.color, entry.thickness, opacity, 1.08);
+    paintGlowCircle(ctx, entry.focusPoint.x, entry.focusPoint.y, clamp(entry.thickness * 0.86, 28, 104), entry.color, 0.14 * opacity);
   });
 
   preparedEdges.forEach((entry) => {
@@ -428,20 +469,18 @@ function renderFlowField(
     const opacity = hoveredId ? (selected ? 1 : 0.06) : 1;
     const color = entry.color;
 
-    drawPolyline(ctx, entry.points, rgba("#ffffff", 0.045), clamp(entry.thickness * 0.82, 4, 58), { blur: 30, alpha: opacity });
-    drawPolyline(ctx, entry.points, rgba(color, 0.15), clamp(entry.thickness * 0.55, 3, 42), { blur: 18, alpha: opacity });
-    drawPolyline(ctx, entry.points, rgba(color, 0.38), clamp(entry.thickness * 0.12, 2.2, 14), { blur: 7, alpha: opacity });
-    drawMassOffsets(ctx, entry.points, color, clamp(entry.thickness * 0.42, 4, 32), opacity * 0.9, 12);
-    paintGlowTrail(ctx, entry.points, color, clamp(entry.thickness * 0.12, 4, 18), (selected ? 0.04 : 0.006) * opacity, 0.08, 0.96, 5);
-    paintGlowTrail(ctx, entry.points, "#ffffff", clamp(entry.thickness * 0.06, 2, 9), (selected ? 0.024 : 0.004) * opacity, 0.22, 0.76, 6);
+    drawBodyPass(ctx, entry.points, color, clamp(entry.thickness * 0.7, 6, 52), opacity * (selected ? 1 : 0.62), 0.72);
+    drawPolyline(ctx, entry.points, rgba(color, 0.34), clamp(entry.thickness * 0.11, 2, 12), { blur: 8, alpha: opacity });
+    paintGlowTrail(ctx, entry.points, color, clamp(entry.thickness * 0.11, 4, 16), (selected ? 0.034 : 0.005) * opacity, 0.08, 0.96, 5);
+    paintGlowTrail(ctx, entry.points, "#ffffff", clamp(entry.thickness * 0.055, 2, 8), (selected ? 0.018 : 0.003) * opacity, 0.22, 0.76, 6);
 
     entry.strandOffsets.forEach((offset, index) => {
       const strandPoints = buildStrandPoints(entry.points, offset, time, entry.seed + index * 0.71);
       const offsetRatio = Math.abs(offset) / Math.max(1, entry.spread);
-      const strandAlpha = (selected ? 0.18 : 0.022) * (1 - offsetRatio * 0.46);
-      const strandWidth = 1.05 + (index % 4 === 0 ? 0.38 : 0);
+      const strandAlpha = (selected ? 0.14 : 0.016) * (1 - offsetRatio * 0.32);
+      const strandWidth = 0.95 + (index % 4 === 0 ? 0.24 : 0);
       drawPolyline(ctx, strandPoints, rgba(color, strandAlpha), strandWidth, {
-        blur: index % 3 === 0 ? 3.8 : 1.8,
+        blur: index % 3 === 0 ? 3 : 1.3,
         alpha: opacity,
       });
     });
@@ -639,8 +678,8 @@ function SvgFlowConnections({
           const d = svgPath(entry.points);
           return (
             <g key={`bundle-${entry.bundle.key}`} opacity={opacity}>
-              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.22} strokeWidth={clamp(entry.thickness * 0.72, 12, 80)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-soft-glow)" />
-              <path d={d} fill="none" stroke="#ffffff" strokeOpacity={0.09} strokeWidth={clamp(entry.thickness * 0.22, 5, 26)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-core-glow)" />
+              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.16} strokeWidth={clamp(entry.thickness * 0.44, 10, 56)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-soft-glow)" />
+              <path d={d} fill="none" stroke="#ffffff" strokeOpacity={0.05} strokeWidth={clamp(entry.thickness * 0.12, 3, 16)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-core-glow)" />
             </g>
           );
         })}
@@ -651,9 +690,9 @@ function SvgFlowConnections({
           const d = svgPath(entry.points);
           return (
             <g key={`edge-${entry.edge.id}`} opacity={opacity}>
-              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.24} strokeWidth={clamp(entry.thickness * 0.26, 4, 34)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-soft-glow)" />
-              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.62} strokeWidth={clamp(entry.thickness * 0.085, 2.2, 12)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-core-glow)" />
-              <path d={d} fill="none" stroke="#ffffff" strokeOpacity={0.2} strokeWidth={clamp(entry.thickness * 0.028, 1, 4)} strokeLinecap="round" strokeLinejoin="round" />
+              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.12} strokeWidth={clamp(entry.thickness * 0.18, 3, 20)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-soft-glow)" />
+              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.38} strokeWidth={clamp(entry.thickness * 0.056, 1.5, 7)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-core-glow)" />
+              <path d={d} fill="none" stroke="#ffffff" strokeOpacity={0.12} strokeWidth={clamp(entry.thickness * 0.018, 0.8, 2.6)} strokeLinecap="round" strokeLinejoin="round" />
             </g>
           );
         })}
@@ -1163,8 +1202,8 @@ export default function PortfolioOSOdysseyFlowField() {
   const preparedEdges = useMemo<PreparedEdge[]>(() => {
     return routedEdges.map((edge) => {
       const thickness = mode === "robust" ? edge.robustThickness : mode === "delta" ? edge.deltaThickness : edge.actualThickness;
-      const spread = Math.max(18, thickness * 0.84);
-      const strandCount = clamp(Math.round(edge.value * 0.88), 16, 42);
+      const spread = Math.max(14, thickness * 0.72);
+      const strandCount = clamp(Math.round(edge.value * 1.02), 20, 54);
       const strandOffsets = Array.from({ length: strandCount }, (_, index) => {
         const ratio = strandCount === 1 ? 0.5 : index / (strandCount - 1);
         return (ratio - 0.5) * spread;
