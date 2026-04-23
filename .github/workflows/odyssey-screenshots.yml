@@ -1,0 +1,59 @@
+name: Odyssey screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      quality:
+        description: "Render quality"
+        required: true
+        default: "safe"
+        type: choice
+        options:
+          - safe
+          - balanced
+          - cinematic
+      wait_ms:
+        description: "Wait after triggering render before screenshot"
+        required: true
+        default: "1200"
+  push:
+    branches:
+      - odyssey-screenshot-system
+      - odyssey-safe-render-control
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Build app
+        run: npm run build
+
+      - name: Capture screenshot
+        env:
+          ODYSSEY_QUALITY: ${{ github.event.inputs.quality || 'safe' }}
+          ODYSSEY_WAIT_MS: ${{ github.event.inputs.wait_ms || '1200' }}
+          ODYSSEY_OUTPUT: odyssey-${{ github.event.inputs.quality || 'safe' }}.png
+        run: npm run screenshot
+
+      - name: Upload screenshot artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: odyssey-screenshot-${{ github.event.inputs.quality || 'safe' }}
+          path: artifacts/screenshots/
+          if-no-files-found: error
