@@ -1,9 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import PortfolioOSOdysseyFlowField from "./PortfolioOSOdysseyFlowField";
+import SafeOdysseyShell from "./SafeOdysseyShell";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <PortfolioOSOdysseyFlowField />
-  </React.StrictMode>
-);
+ReactDOM.createRoot(document.getElementById("root")!).render(<SafeOdysseyShell />);
