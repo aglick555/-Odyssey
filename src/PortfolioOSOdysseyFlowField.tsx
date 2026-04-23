@@ -54,6 +54,7 @@ type PreparedEdge = {
 
 function rgba(hex: string, alpha: number) {
   if (hex.startsWith("rgba")) return hex;
+  if (hex.startsWith("rgb(")) return hex.replace("rgb(", "rgba(").replace(")", `, ${alpha})`);
   const clean = hex.replace("#", "");
   const value = clean.length === 3 ? clean.split("").map((char) => char + char).join("") : clean;
   const int = Number.parseInt(value, 16);
@@ -311,69 +312,69 @@ function flowColor(edge: FlowEdge, mode: Mode) {
 function displayFrame(node: RoutedNode): DisplayFrame {
   if (node.stage === "source") {
     return {
-      x: node.x + 8,
-      y: node.y + 152,
-      w: 226,
-      h: 292,
+      x: node.x + 4,
+      y: node.y + 72,
+      w: 120,
+      h: 330,
       kind: "hero",
     };
   }
 
   if (node.stage === "allocation") {
     return {
-      x: node.x + 56 + (node.orderIndex % 2 === 0 ? -6 : 16),
-      y: node.y + (node.orderIndex % 2 === 0 ? -8 : 10),
-      w: 178,
-      h: 88,
+      x: node.x + 4,
+      y: node.y + (node.orderIndex % 2 === 0 ? -4 : 4),
+      w: 192,
+      h: 76,
       kind: "card",
     };
   }
 
   if (node.stage === "activity") {
     return {
-      x: node.x + 92,
-      y: node.y + 38,
-      w: 104,
-      h: 24,
-      kind: "chip",
+      x: node.x + 4,
+      y: node.y + (node.orderIndex % 2 === 0 ? -2 : 2),
+      w: 160,
+      h: 72,
+      kind: "card",
     };
   }
 
   if (node.id === "invested") {
     return {
-      x: node.x - 8,
-      y: node.y + 18,
-      w: 180,
-      h: 80,
+      x: node.x,
+      y: node.y - 18,
+      w: 164,
+      h: 210,
       kind: "card",
     };
   }
 
   if (node.id === "cash") {
     return {
-      x: node.x + 6,
-      y: node.y - 6,
-      w: 172,
-      h: 72,
+      x: node.x,
+      y: node.y,
+      w: 164,
+      h: 76,
       kind: "card",
     };
   }
 
   if (node.id === "outflow") {
     return {
-      x: node.x - 12,
-      y: node.y + 10,
-      w: 168,
-      h: 70,
+      x: node.x,
+      y: node.y,
+      w: 164,
+      h: 74,
       kind: "card",
     };
   }
 
   return {
-    x: node.x - 8,
-    y: node.y + 18,
-    w: 176,
-    h: 72,
+    x: node.x,
+    y: node.y + 4,
+    w: 168,
+    h: 100,
     kind: "card",
   };
 }
@@ -412,11 +413,14 @@ function renderFlowField(
   preparedBundles.forEach((entry) => {
     const active = activeBundles.has(entry.bundle.key);
     const opacity = hoveredId ? (active ? 1 : 0.15) : 1;
-    drawPolyline(ctx, entry.points, rgba("#ffffff", 0.03), entry.thickness * 2.85, { blur: 52, alpha: opacity });
-    drawPolyline(ctx, entry.points, rgba(entry.color, 0.055), entry.thickness * 2.1, { blur: 34, alpha: opacity });
-    drawMassOffsets(ctx, entry.points, entry.color, entry.thickness * 1.08, opacity, 22);
-    paintGlowTrail(ctx, entry.points, entry.color, entry.thickness * 0.34, 0.026 * opacity, 0.18, 0.84, 3);
-    paintGlowCircle(ctx, entry.focusPoint.x, entry.focusPoint.y, entry.thickness * 1.38, entry.color, 0.075 * opacity);
+    const haloWidth = clamp(entry.thickness * 1.15, 18, 118);
+    const bodyWidth = clamp(entry.thickness * 0.82, 12, 84);
+    drawPolyline(ctx, entry.points, rgba("#ffffff", 0.055), haloWidth, { blur: 54, alpha: opacity });
+    drawPolyline(ctx, entry.points, rgba(entry.color, 0.13), bodyWidth, { blur: 34, alpha: opacity });
+    drawMassOffsets(ctx, entry.points, entry.color, clamp(entry.thickness * 0.72, 10, 70), opacity, 22);
+    drawPolyline(ctx, entry.points, rgba(entry.color, 0.24), clamp(entry.thickness * 0.18, 4, 18), { blur: 7, alpha: opacity });
+    paintGlowTrail(ctx, entry.points, entry.color, clamp(entry.thickness * 0.28, 8, 38), 0.048 * opacity, 0.14, 0.88, 3);
+    paintGlowCircle(ctx, entry.focusPoint.x, entry.focusPoint.y, clamp(entry.thickness * 0.72, 22, 90), entry.color, 0.12 * opacity);
   });
 
   preparedEdges.forEach((entry) => {
@@ -424,18 +428,18 @@ function renderFlowField(
     const opacity = hoveredId ? (selected ? 1 : 0.06) : 1;
     const color = entry.color;
 
-    drawPolyline(ctx, entry.points, rgba("#ffffff", 0.022), entry.thickness * 1.95, { blur: 28, alpha: opacity });
-    drawPolyline(ctx, entry.points, rgba(color, 0.055), entry.thickness * 1.34, { blur: 18, alpha: opacity });
-    drawPolyline(ctx, entry.points, rgba(color, 0.15), Math.max(3.2, entry.thickness * 0.22), { blur: 7, alpha: opacity });
-    drawMassOffsets(ctx, entry.points, color, entry.thickness * 0.92, opacity * 0.9, 14);
-    paintGlowTrail(ctx, entry.points, color, entry.thickness * 0.18, (selected ? 0.02 : 0.004) * opacity, 0.08, 0.96, 5);
-    paintGlowTrail(ctx, entry.points, "#ffffff", entry.thickness * 0.09, (selected ? 0.014 : 0.003) * opacity, 0.22, 0.76, 6);
+    drawPolyline(ctx, entry.points, rgba("#ffffff", 0.045), clamp(entry.thickness * 0.82, 4, 58), { blur: 30, alpha: opacity });
+    drawPolyline(ctx, entry.points, rgba(color, 0.15), clamp(entry.thickness * 0.55, 3, 42), { blur: 18, alpha: opacity });
+    drawPolyline(ctx, entry.points, rgba(color, 0.38), clamp(entry.thickness * 0.12, 2.2, 14), { blur: 7, alpha: opacity });
+    drawMassOffsets(ctx, entry.points, color, clamp(entry.thickness * 0.42, 4, 32), opacity * 0.9, 12);
+    paintGlowTrail(ctx, entry.points, color, clamp(entry.thickness * 0.12, 4, 18), (selected ? 0.04 : 0.006) * opacity, 0.08, 0.96, 5);
+    paintGlowTrail(ctx, entry.points, "#ffffff", clamp(entry.thickness * 0.06, 2, 9), (selected ? 0.024 : 0.004) * opacity, 0.22, 0.76, 6);
 
     entry.strandOffsets.forEach((offset, index) => {
       const strandPoints = buildStrandPoints(entry.points, offset, time, entry.seed + index * 0.71);
       const offsetRatio = Math.abs(offset) / Math.max(1, entry.spread);
-      const strandAlpha = (selected ? 0.12 : 0.018) * (1 - offsetRatio * 0.48);
-      const strandWidth = 0.9 + (index % 4 === 0 ? 0.32 : 0);
+      const strandAlpha = (selected ? 0.18 : 0.022) * (1 - offsetRatio * 0.46);
+      const strandWidth = 1.05 + (index % 4 === 0 ? 0.38 : 0);
       drawPolyline(ctx, strandPoints, rgba(color, strandAlpha), strandWidth, {
         blur: index % 3 === 0 ? 3.8 : 1.8,
         alpha: opacity,
@@ -559,14 +563,16 @@ function OverlayNodeCard({
         style={{
           height: "100%",
           width: "100%",
-          borderRadius: hero ? 28 : 24,
-          border: `1px solid ${rgba(node.color, hero ? 0.36 : 0.2)}`,
-          background: hero ? "rgba(10,18,24,0.54)" : "rgba(8,16,28,0.42)",
-          boxShadow: `${active ? `0 0 0 1px ${rgba(node.color, 0.08)}, ` : ""}inset 0 0 56px ${rgba(node.color, hero ? 0.14 : 0.06)}, 0 22px 60px rgba(0,0,0,0.22)`,
-          backdropFilter: "blur(24px)",
+          borderRadius: hero ? 10 : 8,
+          border: `1px solid ${rgba(node.color, hero ? 0.58 : 0.42)}`,
+          background: hero
+            ? `linear-gradient(180deg, ${rgba(node.color, 0.18)}, rgba(7,18,18,0.78))`
+            : `linear-gradient(180deg, ${rgba(node.color, 0.16)}, rgba(5,13,24,0.8))`,
+          boxShadow: `${active ? `0 0 0 1px ${rgba(node.color, 0.16)}, ` : ""}inset 0 0 42px ${rgba(node.color, hero ? 0.18 : 0.08)}, 0 0 32px ${rgba(node.color, hero ? 0.22 : 0.1)}, 0 14px 36px rgba(0,0,0,0.34)`,
+          backdropFilter: "blur(18px)",
           color: palette.text,
           boxSizing: "border-box",
-          padding: hero ? "22px 20px" : "14px 16px",
+          padding: hero ? "18px 14px" : "12px 14px",
           display: "flex",
           flexDirection: "column",
           justifyContent: "space-between",
@@ -574,19 +580,85 @@ function OverlayNodeCard({
         }}
       >
         <div>
-          <div style={{ fontSize: hero ? 15 : 12, fontWeight: 700, lineHeight: 1.15, letterSpacing: hero ? 0.2 : 0.1 }}>
+          <div style={{ fontSize: hero ? 14 : 12, fontWeight: 700, lineHeight: 1.15, letterSpacing: hero ? 0.2 : 0.1 }}>
             {lines.map((line, index) => (
               <div key={`${node.id}-${index}`}>{line}</div>
             ))}
           </div>
-          {node.detail ? <div style={{ marginTop: hero ? 14 : 8, color: "#8ba2bf", fontSize: hero ? 14 : 11 }}>{node.detail}</div> : null}
+          {node.detail ? <div style={{ marginTop: hero ? 14 : 8, color: "#9eb2ca", fontSize: hero ? 12 : 10 }}>{node.detail}</div> : null}
         </div>
         <div>
-          <div style={{ fontSize: hero ? 23 : 15, fontWeight: 800 }}>${node.value.toFixed(1)}M</div>
-          <div style={{ marginTop: 4, color: rgba(node.color, 0.98), fontSize: hero ? 16 : 11, fontWeight: 700 }}>{node.pctText}</div>
+          <div style={{ fontSize: hero ? 23 : 17, fontWeight: 700 }}>${node.value.toFixed(1)}M</div>
+          <div style={{ marginTop: 4, color: rgba(node.color, 0.98), fontSize: hero ? 14 : 11, fontWeight: 700 }}>{node.pctText}</div>
         </div>
       </div>
     </foreignObject>
+  );
+}
+
+function svgPath(points: Point[]) {
+  if (points.length === 0) return "";
+  return points.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+}
+
+function SvgFlowConnections({
+  preparedBundles,
+  preparedEdges,
+  hoveredId,
+  highlightIds,
+  activeBundles,
+}: {
+  preparedBundles: PreparedBundle[];
+  preparedEdges: PreparedEdge[];
+  hoveredId: string | null;
+  highlightIds: Set<string>;
+  activeBundles: Set<string>;
+}) {
+  return (
+    <>
+      <defs>
+        <filter id="flow-soft-glow" x="-25%" y="-25%" width="150%" height="150%">
+          <feGaussianBlur stdDeviation="7" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+        <filter id="flow-core-glow" x="-18%" y="-18%" width="136%" height="136%">
+          <feGaussianBlur stdDeviation="2.4" result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      <g style={{ mixBlendMode: "screen", pointerEvents: "none" }}>
+        {preparedBundles.map((entry) => {
+          const active = activeBundles.has(entry.bundle.key);
+          const opacity = hoveredId ? (active ? 1 : 0.18) : 1;
+          const d = svgPath(entry.points);
+          return (
+            <g key={`bundle-${entry.bundle.key}`} opacity={opacity}>
+              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.22} strokeWidth={clamp(entry.thickness * 0.72, 12, 80)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-soft-glow)" />
+              <path d={d} fill="none" stroke="#ffffff" strokeOpacity={0.09} strokeWidth={clamp(entry.thickness * 0.22, 5, 26)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-core-glow)" />
+            </g>
+          );
+        })}
+
+        {preparedEdges.map((entry) => {
+          const selected = !hoveredId || highlightIds.has(entry.edge.id) || highlightIds.has(entry.edge.from) || highlightIds.has(entry.edge.to);
+          const opacity = hoveredId ? (selected ? 1 : 0.08) : 1;
+          const d = svgPath(entry.points);
+          return (
+            <g key={`edge-${entry.edge.id}`} opacity={opacity}>
+              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.24} strokeWidth={clamp(entry.thickness * 0.26, 4, 34)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-soft-glow)" />
+              <path d={d} fill="none" stroke={entry.color} strokeOpacity={0.62} strokeWidth={clamp(entry.thickness * 0.085, 2.2, 12)} strokeLinecap="round" strokeLinejoin="round" filter="url(#flow-core-glow)" />
+              <path d={d} fill="none" stroke="#ffffff" strokeOpacity={0.2} strokeWidth={clamp(entry.thickness * 0.028, 1, 4)} strokeLinecap="round" strokeLinejoin="round" />
+            </g>
+          );
+        })}
+      </g>
+    </>
   );
 }
 
@@ -656,8 +728,380 @@ function FlowFieldCanvas({
         onHover(bestMatch?.id ?? null);
       }}
       onMouseLeave={onLeave}
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }}
+      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", transform: "scale(1.08)", transformOrigin: "50% 48%" }}
     />
+  );
+}
+
+function Panel({
+  title,
+  kicker,
+  children,
+  accent = palette.blue,
+  style,
+}: {
+  title: string;
+  kicker?: string;
+  children: React.ReactNode;
+  accent?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <section
+      style={{
+        border: "1px solid rgba(109,148,178,0.34)",
+        borderRadius: 8,
+        background: "linear-gradient(180deg, rgba(7,18,30,0.92), rgba(3,10,18,0.9))",
+        boxShadow: `inset 0 0 28px ${rgba(accent, 0.035)}`,
+        overflow: "hidden",
+        ...style,
+      }}
+    >
+      <div style={{ padding: "10px 12px 7px", borderBottom: "1px solid rgba(124,159,184,0.16)", display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <div style={{ color: rgba(accent, 0.96), fontSize: 12, letterSpacing: 0.9, textTransform: "uppercase", fontWeight: 700 }}>{title}</div>
+        {kicker ? <div style={{ color: "#7f91a6", fontSize: 10 }}>{kicker}</div> : null}
+      </div>
+      <div style={{ padding: 12 }}>{children}</div>
+    </section>
+  );
+}
+
+function TopBar({ mode, setMode }: { mode: Mode; setMode: (mode: Mode) => void }) {
+  const tabs = ["Flow Monitor", "Scenario Studio", "Path Explorer", "Constraint Inspector", "Attribution Engine", "Reports"];
+  return (
+    <header style={{ height: 52, display: "grid", gridTemplateColumns: "390px 1fr 430px", alignItems: "center", gap: 12 }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <h1 style={{ margin: 0, fontSize: 32, lineHeight: 1, letterSpacing: -0.6 }}>Capital Flow Odyssey</h1>
+          <span style={{ border: "1px solid rgba(70,173,255,0.5)", borderRadius: 6, padding: "4px 10px", color: "#9ed8ff", background: "rgba(13,39,60,0.62)", fontSize: 15 }}>v17</span>
+        </div>
+        <div style={{ marginTop: 4, color: "#a5b4c7", fontSize: 13 }}>From Contributions to Redemptions - The True Journey of Capital</div>
+      </div>
+
+      <nav style={{ display: "grid", gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))`, border: "1px solid rgba(107,141,170,0.32)", borderRadius: 6, overflow: "hidden", minWidth: 0 }}>
+        {tabs.map((tab, index) => (
+          <div
+            key={tab}
+            style={{
+              padding: "12px 10px",
+              color: index === 0 ? "#cfeeff" : "#7d8998",
+              background: index === 0 ? "linear-gradient(180deg, rgba(11,43,72,0.78), rgba(4,16,28,0.86))" : "rgba(4,12,22,0.76)",
+              borderRight: index === tabs.length - 1 ? "none" : "1px solid rgba(107,141,170,0.18)",
+              boxShadow: index === 0 ? "inset 0 -2px 0 #41b7ff, 0 0 24px rgba(48,165,255,0.28)" : "none",
+              fontSize: 12,
+              textAlign: "center",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {tab}
+          </div>
+        ))}
+      </nav>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10 }}>
+        <div style={{ border: "1px solid rgba(107,141,170,0.28)", borderRadius: 4, padding: "9px 18px", color: "#8998aa", background: "rgba(4,12,20,0.72)", fontSize: 12 }}>
+          Jan 1 - May 31, 2025
+        </div>
+        <div style={{ display: "flex", gap: 6, border: "1px solid rgba(107,141,170,0.24)", borderRadius: 6, padding: 4 }}>
+          {(["actual", "robust", "delta"] as Mode[]).map((entry) => (
+            <button
+              key={entry}
+              onClick={() => setMode(entry)}
+              style={{
+                border: "none",
+                borderRadius: 4,
+                padding: "7px 9px",
+                color: mode === entry ? "#ecfbff" : "#7f91a6",
+                background: mode === entry ? "rgba(38,126,178,0.34)" : "transparent",
+                fontSize: 11,
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              {entry}
+            </button>
+          ))}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function Sparkline({ color = palette.teal, height = 42 }: { color?: string; height?: number }) {
+  const points = "0,32 22,24 44,18 66,21 88,15 110,25 132,22 154,12 176,7";
+  return (
+    <svg viewBox="0 0 176 42" height={height} width="100%" preserveAspectRatio="none" style={{ display: "block" }}>
+      <path d="M0 39 L0 32 L22 24 L44 18 L66 21 L88 15 L110 25 L132 22 L154 12 L176 7 L176 39 Z" fill={rgba(color, 0.16)} />
+      <polyline points={points} fill="none" stroke={color} strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+      <polyline points={points} fill="none" stroke="#ffffff" strokeOpacity={0.32} strokeWidth="0.8" />
+    </svg>
+  );
+}
+
+function CohortSidebar() {
+  const total = capitalLots.reduce((sum, lot) => sum + lot.amount, 0);
+  return (
+    <aside style={{ display: "grid", gap: 10 }}>
+      <Panel title="Capital Cohorts" kicker="by vintage" accent={palette.blue}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+          {["Vintage", "Source"].map((label, index) => (
+            <div key={label} style={{ flex: 1, padding: "7px 8px", border: "1px solid rgba(95,128,154,0.35)", borderRadius: 5, background: index === 0 ? "rgba(24,69,105,0.42)" : "rgba(5,15,25,0.55)", color: index === 0 ? "#d9f2ff" : "#7e8ea0", fontSize: 11, textAlign: "center" }}>{label}</div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gap: 9 }}>
+          {capitalLots.map((lot, index) => (
+            <div key={lot.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, paddingBottom: 8, borderBottom: index === capitalLots.length - 1 ? "none" : "1px solid rgba(126,153,177,0.12)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, color: lot.color, fontSize: 14, fontWeight: 700 }}>
+                <span style={{ width: 9, height: 9, borderRadius: 999, background: lot.color, boxShadow: `0 0 12px ${lot.color}` }} />
+                {lot.label}
+              </div>
+              <div style={{ color: "#7e8ea0", fontSize: 11 }}>Age {index === 0 ? "0-150d" : index === 1 ? "151-365d" : index === 2 ? "1-2y" : index === 3 ? "2-3y" : "3y+"}</div>
+              <div style={{ color: "#dce8f8", fontSize: 14 }}>${lot.amount.toFixed(1)}M</div>
+              <div style={{ color: "#a9b5c4", fontSize: 12 }}>{((lot.amount / total) * 100).toFixed(1)}%</div>
+            </div>
+          ))}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr auto", color: "#a8b6c7", fontSize: 13, paddingTop: 2 }}>
+            <span>Total</span>
+            <span>${total.toFixed(1)}M&nbsp;&nbsp;100%</span>
+          </div>
+        </div>
+      </Panel>
+
+      <Panel title="Flow Velocity" kicker="system" accent={palette.green}>
+        <div style={{ fontSize: 28, color: palette.green, letterSpacing: -0.6 }}>1.42x <span style={{ fontSize: 12, color: "#7e8ea0" }}>vs Baseline 1.00x</span></div>
+        <Sparkline color={palette.teal} />
+        <div style={{ display: "flex", justifyContent: "space-between", color: "#7e8ea0", fontSize: 11 }}><span>Slow</span><span>Fast</span></div>
+      </Panel>
+
+      <Panel title="Capacity Utilization" kicker="avg" accent={palette.green}>
+        <div style={{ fontSize: 28, color: "#a6e95d" }}>68% <span style={{ color: palette.green, fontSize: 13 }}>Healthy</span></div>
+        <div style={{ height: 8, borderRadius: 999, background: "rgba(255,255,255,0.08)", margin: "10px 0 14px", overflow: "hidden" }}>
+          <div style={{ width: "68%", height: "100%", background: "linear-gradient(90deg, #76df76, #e5b743)", boxShadow: "0 0 14px rgba(161,231,92,0.46)" }} />
+        </div>
+        {["High (>90%)", "Medium (60-90%)", "Low (<60%)"].map((label, index) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", color: "#9aabba", fontSize: 12, marginTop: 6 }}>
+            <span>{label}</span><span>{[2, 4, 3][index]}</span>
+          </div>
+        ))}
+      </Panel>
+
+      <Panel title="Active Constraints" accent={palette.red}>
+        {["Capacity", "Liquidity Windows", "Market Impact", "Operational"].map((label, index) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", color: "#aeb8c5", fontSize: 12, marginBottom: 7 }}>
+            <span>{label}</span><span>{[3, 2, 1, 0][index]}</span>
+          </div>
+        ))}
+      </Panel>
+
+      <Panel title="Quick Filters" accent={palette.blue}>
+        {["All Funds", "All Strategies", "All Asset Classes"].map((label) => (
+          <div key={label} style={{ border: "1px solid rgba(109,148,178,0.24)", borderRadius: 5, padding: "8px 10px", color: "#98aabc", background: "rgba(5,14,23,0.66)", marginBottom: 8, fontSize: 12 }}>{label}</div>
+        ))}
+        <button style={{ width: "100%", padding: "9px", border: "1px solid rgba(87,134,164,0.4)", borderRadius: 5, background: "rgba(8,24,36,0.8)", color: "#a9c9df", fontSize: 12 }}>Trace Filters</button>
+      </Panel>
+    </aside>
+  );
+}
+
+function StageStepper() {
+  const stages = [
+    ["1", "Sources", "Where capital comes from", palette.green],
+    ["2", "Allocation", "Where it is invested", palette.blue],
+    ["3", "Activity", "How it flows over time", palette.purple],
+    ["4", "Outcomes", "Where it goes", palette.amber],
+    ["5", "Results", "Performance impact", palette.teal],
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, alignItems: "center", minHeight: 50 }}>
+      {stages.map(([number, label, detail, color]) => (
+        <div key={label} style={{ display: "flex", alignItems: "center", gap: 9, color }}>
+          <div style={{ width: 34, height: 34, borderRadius: 999, border: `1px solid ${rgba(color, 0.72)}`, display: "grid", placeItems: "center", boxShadow: `0 0 20px ${rgba(color, 0.22)}`, fontWeight: 800 }}>{number}</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 800 }}>{label}</div>
+            <div style={{ fontSize: 10, color: "#8a9aab" }}>{detail}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TimelinePanel() {
+  const markers = ["Base Date", "Q1 2025", "Q2 2025", "Q3 2025", "Q4 2025"];
+  const events = ["E", "R", "B", "D", "TF", "D", "I", "F", "D", "D", "R", "P", "Y"];
+  return (
+    <Panel title="Timeline" kicker="Capital Journey" accent={palette.blue} style={{ padding: 0 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "100px 1fr 170px", gap: 14, alignItems: "center" }}>
+        <div style={{ color: "#7e91a4", fontSize: 11, display: "grid", gap: 5 }}>
+          {["Events", "Constraints", "States", "Capacity"].map((label) => (
+            <label key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ width: 11, height: 11, border: `1px solid ${palette.green}`, display: "inline-block" }} />{label}</label>
+          ))}
+        </div>
+        <div>
+          <div style={{ display: "grid", gridTemplateColumns: `repeat(${markers.length}, 1fr)`, color: "#9baabc", fontSize: 11, marginBottom: 8 }}>
+            {markers.map((marker) => <span key={marker}>{marker}</span>)}
+          </div>
+          <div style={{ height: 1, background: "linear-gradient(90deg, rgba(255,255,255,0.25), rgba(255,183,72,0.8), rgba(255,255,255,0.2))", position: "relative", marginBottom: 16 }}>
+            {events.map((event, index) => (
+              <span key={`${event}-${index}`} style={{ position: "absolute", left: `${(index / (events.length - 1)) * 100}%`, top: -8, width: 18, height: 18, marginLeft: -9, borderRadius: 999, border: "1px solid currentColor", color: [palette.green, palette.blue, palette.red, palette.purple, palette.amber][index % 5], background: "#05101b", textAlign: "center", fontSize: 10, lineHeight: "18px" }}>{event}</span>
+            ))}
+          </div>
+          <div style={{ height: 16, border: "1px solid rgba(122,148,171,0.18)", borderRadius: 4, overflow: "hidden", display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr", fontSize: 10, color: "#9bb0c2" }}>
+            {["Normal", "Rebalancing Window", "High Utilization", "Market Volatility", "Normal"].map((label, index) => (
+              <div key={label} style={{ textAlign: "center", background: ["rgba(72,184,82,0.16)", "rgba(49,132,196,0.16)", "rgba(230,161,43,0.18)", "rgba(208,60,76,0.14)", "rgba(72,184,82,0.14)"][index] }}>{label}</div>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#84a4bb", fontSize: 10, marginBottom: 6 }}><span>Capacity Heatmap</span><span>100%</span></div>
+          <div style={{ height: 10, background: "linear-gradient(90deg, #2bbbd2, #c4d44f, #d47a25)", borderRadius: 999 }} />
+        </div>
+      </div>
+    </Panel>
+  );
+}
+
+function MetricStrip({ summary }: { summary: { inflow: number; uplift: number; avgConfidence: number; constrained: number } }) {
+  const metrics = [
+    ["Total Contributions", `$${summary.inflow.toFixed(1)}M`, "100%", palette.green],
+    ["Total Redemptions", "$29.3M", "33.6%", palette.amber],
+    ["Net Cash Flow", "$58.1M", "66.4%", palette.blue],
+    ["Realized P&L", "$9.6M", "11.6% of Invested", palette.purple],
+    ["Time Period", "YTD 2025", "Jan 1 - May 31, 2025", palette.purple],
+    ["Net Performance", `+$${(summary.uplift * 0.29).toFixed(1)}M`, "+5.4% (IRR)", palette.teal],
+    ["System Reconciliation", "Balanced", "In = Out + Residual", palette.green],
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: `repeat(${metrics.length}, 1fr)`, border: "1px solid rgba(109,148,178,0.3)", borderRadius: 8, background: "rgba(4,13,22,0.88)", overflow: "hidden" }}>
+      {metrics.map(([label, value, sub, color], index) => (
+        <div key={label} style={{ padding: "11px 14px", borderRight: index === metrics.length - 1 ? "none" : "1px solid rgba(109,148,178,0.22)", minWidth: 0 }}>
+          <div style={{ color: "#8ea0b2", fontSize: 11 }}>{label}</div>
+          <div style={{ color, fontSize: 24, marginTop: 2, letterSpacing: -0.6 }}>{value}</div>
+          <div style={{ color: "#8ea0b2", fontSize: 11 }}>{sub}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RightSidebar({ summary }: { summary: { inflow: number; uplift: number; avgConfidence: number; constrained: number } }) {
+  const pathRows = [
+    ["From Growth Fund A", "30.2%", "$27.8M", "+1.9M", palette.blue],
+    ["From Value Fund B", "25.1%", "$23.1M", "-0.8M", palette.green],
+    ["From Intl C", "19.3%", "$17.8M", "+0.4M", palette.amber],
+    ["From Bond Fund D", "14.7%", "$13.5M", "-0.6M", palette.red],
+    ["From Real Estate E", "7.2%", "$6.6M", "+0.4M", palette.purple],
+  ];
+  return (
+    <aside style={{ display: "grid", gap: 10 }}>
+      <Panel title="Path Contribution" kicker="to Ending NAV" accent={palette.blue}>
+        <div style={{ display: "grid", gap: 9 }}>
+          {pathRows.map(([label, pct, amount, delta, color]) => (
+            <div key={label} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", fontSize: 12 }}>
+              <span style={{ color }}><span style={{ display: "inline-block", width: 8, height: 8, borderRadius: 999, background: color, marginRight: 8 }} />{label}</span>
+              <span style={{ color: "#d5e2ef" }}>{amount}</span>
+              <span style={{ color: String(delta).startsWith("-") ? palette.red : palette.green }}>{delta}</span>
+              <span style={{ color, fontWeight: 800 }}>{pct}</span>
+              <div style={{ gridColumn: "2 / 4", height: 4, background: "rgba(255,255,255,0.08)", borderRadius: 99, overflow: "hidden" }}>
+                <div style={{ width: pct, height: "100%", background: color }} />
+              </div>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", color: "#dce8f8", borderTop: "1px solid rgba(255,255,255,0.12)", paddingTop: 8 }}><span>100%</span><span>$92.1M</span><span style={{ color: palette.green }}>+1.1M</span></div>
+        </div>
+      </Panel>
+
+      <Panel title="Residual & Leakage" accent={palette.teal}>
+        <div style={{ color: "#dfe8f4", fontSize: 18 }}>$1.2M <span style={{ fontSize: 13, color: "#8fa0b2" }}>(1.1%)</span></div>
+        {["Fees & Friction", "Rounding", "Timing Mismatch", "Idle Cash"].map((label, index) => (
+          <div key={label} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, color: "#9caebe", fontSize: 12, marginTop: 8 }}>
+            <span>{label}</span><span>{["$0.6M", "$0.2M", "$0.3M", "$0.1M"][index]}</span><span style={{ color: index === 2 ? palette.green : "#7f91a6" }}>{["-0.1M", "0.0M", "-0.1M", "0.0M"][index]}</span>
+          </div>
+        ))}
+      </Panel>
+
+      <Panel title="Scenario Simulator" kicker="Edit" accent={palette.green}>
+        {["Growth Fund A", "Value Fund B", "Real Estate E"].map((label, index) => (
+          <div key={label} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", color: "#aebecd", fontSize: 12, marginBottom: 9 }}>
+            <span>{label}</span><span style={{ color: "#dff7b4" }}>+{[10, 15, 15][index]}%</span><span style={{ color: palette.green }}>+${[2.4, 3.2, 1.1][index]}M</span>
+          </div>
+        ))}
+        <button style={{ width: "100%", padding: "10px", borderRadius: 5, border: "1px solid rgba(52,150,240,0.55)", background: "rgba(17,77,126,0.6)", color: "#dff4ff" }}>Run Scenario</button>
+        <div style={{ marginTop: 12, color: "#93a7ba", fontSize: 12 }}>Compare Scenarios (3)</div>
+      </Panel>
+
+      <Panel title="How To Read v17" accent={palette.slate}>
+        {["Strands = capital lots", "Thickness = value", "Brightness = age / new is bright", "Speed cues = velocity", "Triangles = constraints", "Circles = events", "Dashed = scenario"].map((line) => (
+          <div key={line} style={{ color: "#9eabb9", fontSize: 12, marginBottom: 8 }}>{line}</div>
+        ))}
+      </Panel>
+    </aside>
+  );
+}
+
+function BottomAnalytics() {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr 1fr 0.7fr", gap: 10 }}>
+      <Panel title="Top Path" kicker="Contribution -> Ending NAV" accent={palette.green}>
+        <Sparkline color={palette.green} height={68} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 8, color: "#c9d7e5", fontSize: 11 }}>
+          {["2025 YTD", "Growth Fund A", "Rebalancing", "Invested Value", "Ending NAV"].map((label, index) => (
+            <div key={label}><div style={{ color: [palette.green, palette.blue, palette.purple, palette.amber, palette.green][index] }}>{label}</div><div>${[8.3, 7.6, 7.4, 7.0, 6.5][index]}M</div></div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="Attribution Breakdown" kicker="Ending NAV" accent={palette.blue}>
+        <div style={{ display: "grid", gridTemplateColumns: "96px 1fr", gap: 14, alignItems: "center" }}>
+          <div style={{ width: 92, height: 92, borderRadius: 999, background: `conic-gradient(${palette.green} 0 30%, ${palette.blue} 30% 55%, ${palette.amber} 55% 72%, ${palette.red} 72% 79%, ${palette.purple} 79% 100%)`, display: "grid", placeItems: "center" }}>
+            <div style={{ width: 58, height: 58, borderRadius: 999, background: "#07111b", display: "grid", placeItems: "center", color: "#dce8f8", fontSize: 12 }}>$92.1M</div>
+          </div>
+          <div style={{ display: "grid", gap: 5 }}>
+            {["From Growth Fund A", "From Value Fund B", "From International C", "From Bond Fund D", "From Real Estate E"].map((label, index) => (
+              <div key={label} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, color: "#9dacbd", fontSize: 11 }}>
+                <span>{label}</span><span>${[27.8, 23.1, 17.8, 13.5, 6.6][index]}M</span><span>{[30.2, 25.1, 19.3, 14.7, 7.2][index]}%</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Panel>
+      <Panel title="Constraint Inspector" accent={palette.red}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 150px", gap: 14 }}>
+          <div style={{ color: "#aebecd", fontSize: 12 }}>
+            <div style={{ color: palette.red, fontSize: 15, fontWeight: 700 }}>Rebalancing Capacity</div>
+            <div style={{ marginTop: 4 }}>High Impact</div>
+            <div style={{ marginTop: 12, display: "grid", gap: 5 }}>
+              <span>Type: Capacity Constraint</span>
+              <span>Impacted Flow: $18.7M</span>
+              <span>Duration: 14 days</span>
+              <span>Status: Resolved</span>
+            </div>
+          </div>
+          <Sparkline color={palette.red} height={92} />
+        </div>
+      </Panel>
+      <Panel title="Recent Events" kicker="View All" accent={palette.teal}>
+        {["Distribution Paid", "Rebalancing Executed", "Distribution Paid", "Contribution Received", "Quarter End Reconciliation"].map((label, index) => (
+          <div key={label} style={{ display: "grid", gridTemplateColumns: "48px 1fr auto", gap: 8, color: "#aebecd", fontSize: 11, marginBottom: 8 }}>
+            <span>{["May 28", "May 15", "Apr 30", "Apr 20", "Mar 31"][index]}</span><span>{label}</span><span>{["$2.1M", "$4.3M", "$1.9M", "$3.2M", "OK"][index]}</span>
+          </div>
+        ))}
+      </Panel>
+    </div>
+  );
+}
+
+function DataModelFooter() {
+  const fields = ["lot_id", "source_id", "allocation_id", "activity_id", "outcome_id", "result_id", "timestamp_in", "timestamp_out", "amount_in", "amount_out", "age_days", "lineage_group", "split_ratio", "flow_velocity", "capacity_utilization", "constraint_id", "residual_flag", "attribution_weight", "event_id", "meta"];
+  return (
+    <footer style={{ border: "1px solid rgba(109,148,178,0.28)", borderRadius: 7, background: "rgba(4,13,21,0.9)", padding: "8px 12px", display: "flex", gap: 8, alignItems: "center", overflow: "hidden" }}>
+      <span style={{ color: "#5fbfff", fontSize: 11, whiteSpace: "nowrap" }}>v17 DATA MODEL</span>
+      <span style={{ color: "#708093", fontSize: 10, whiteSpace: "nowrap" }}>Core Entities</span>
+      <div style={{ display: "flex", gap: 7, overflow: "hidden" }}>
+        {fields.map((field) => (
+          <span key={field} style={{ color: "#7f91a5", border: "1px solid rgba(109,148,178,0.22)", borderRadius: 4, padding: "5px 10px", fontSize: 10, whiteSpace: "nowrap", background: "rgba(255,255,255,0.02)" }}>{field}</span>
+        ))}
+      </div>
+    </footer>
   );
 }
 
@@ -670,10 +1114,10 @@ export default function PortfolioOSOdysseyFlowField() {
       buildDeterministicLayout(flowNodes, flowEdges, mode, {
         width: FLOW_WIDTH,
         height: FLOW_HEIGHT,
-        paddingX: 80,
-        paddingY: 96,
-        columnGap: 118,
-        rowGap: 28,
+        paddingX: 54,
+        paddingY: 64,
+        columnGap: 82,
+        rowGap: 18,
       }),
     [mode],
   );
@@ -771,125 +1215,111 @@ export default function PortfolioOSOdysseyFlowField() {
     <div
       style={{
         minHeight: "100vh",
-        padding: 22,
+        padding: 10,
         color: palette.text,
         fontFamily: "Avenir Next, Inter, Arial, sans-serif",
         background:
-          "radial-gradient(circle at 8% 12%, rgba(66,112,255,0.14), transparent 24%), radial-gradient(circle at 86% 14%, rgba(53,210,210,0.09), transparent 24%), radial-gradient(circle at 76% 84%, rgba(157,92,255,0.16), transparent 28%), linear-gradient(180deg, #020814 0%, #02060f 100%)",
+          "radial-gradient(circle at 12% 8%, rgba(42,145,255,0.16), transparent 22%), radial-gradient(circle at 84% 12%, rgba(42,210,190,0.12), transparent 24%), linear-gradient(180deg, #030811 0%, #020710 100%)",
+        boxSizing: "border-box",
       }}
     >
-      <div style={{ maxWidth: 1580, margin: "0 auto", display: "grid", gap: 18 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 18, flexWrap: "wrap" }}>
-          <div style={{ maxWidth: 760 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-              <h1 style={{ margin: 0, fontSize: 40, lineHeight: 1, letterSpacing: -1.3 }}>Capital Flow Odyssey</h1>
-              <div
-                style={{
-                  padding: "5px 10px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(151,239,176,0.16)",
-                  background: "rgba(10,24,20,0.42)",
-                  color: "#b6f0c0",
-                  fontSize: 11,
-                  fontWeight: 700,
-                  letterSpacing: 0.7,
-                  textTransform: "uppercase",
-                }}
-              >
-                flow field
-              </div>
-            </div>
-            <div style={{ marginTop: 8, fontSize: 16, lineHeight: 1.45, color: "#8ea5c2" }}>
-              A cinematic flow-first render: shared mass, luminous compression, quiet floating cards, and almost no dashboard chrome.
-            </div>
-          </div>
+      <TopBar mode={mode} setMode={setMode} />
 
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <ModeButton current={mode} value="actual" onSelect={setMode} />
-            <ModeButton current={mode} value="robust" onSelect={setMode} />
-            <ModeButton current={mode} value="delta" onSelect={setMode} />
-          </div>
-        </div>
+      <div style={{ display: "grid", gridTemplateColumns: "230px minmax(840px, 1fr) 276px", gap: 10, alignItems: "start" }}>
+        <CohortSidebar />
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {capitalLots.map((lot) => (
-              <LotPill key={lot.id} lot={lot} />
-            ))}
-          </div>
+        <main style={{ display: "grid", gap: 10, minWidth: 0 }}>
+          <StageStepper />
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <SummaryPill label="Total inflow" value={`$${summary.inflow.toFixed(1)}M`} color={palette.green} />
-            <SummaryPill label="Scenario uplift" value={`${summary.uplift >= 0 ? "+" : ""}$${summary.uplift.toFixed(1)}M`} color={palette.teal} />
-            <SummaryPill label="Confidence" value={`${Math.round(summary.avgConfidence * 100)}%`} color={palette.blue} />
-            <SummaryPill label="Constraints" value={`${summary.constrained}`} color={palette.red} />
-          </div>
-        </div>
-
-        <div
-          style={{
-            position: "relative",
-            borderRadius: 34,
-            border: "1px solid rgba(255,255,255,0.07)",
-            background: "rgba(3,8,17,0.74)",
-            boxShadow: "0 30px 100px rgba(0,0,0,0.44)",
-            overflow: "hidden",
-            aspectRatio: `${FLOW_WIDTH} / ${FLOW_HEIGHT}`,
-          }}
-        >
-          <FlowFieldCanvas
-            preparedBundles={preparedBundles}
-            preparedEdges={preparedEdges}
-            hoveredId={hoveredId}
-            highlightIds={highlightIds}
-            activeBundles={activeBundles}
-            mode={mode}
-            onHover={setHoveredId}
-            onLeave={() => setHoveredId(null)}
-          />
-
-          <svg
-            viewBox={`0 0 ${FLOW_WIDTH} ${FLOW_HEIGHT}`}
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block" }}
+          <section
+            style={{
+              position: "relative",
+              height: 470,
+              minHeight: 430,
+              border: "1px solid rgba(109,148,178,0.26)",
+              borderRadius: 10,
+              background: "rgba(2,9,17,0.78)",
+              boxShadow: "inset 0 0 90px rgba(32,121,166,0.08), 0 24px 80px rgba(0,0,0,0.38)",
+              overflow: "hidden",
+            }}
           >
-            {stageMarkers.map((marker) => (
-              <g key={marker.stage} transform={`translate(${marker.x}, 72)`} opacity={0.76}>
-                <text x={0} y={0} textAnchor="middle" fill="#c7d8ec" fontSize={11.5} fontWeight={700} letterSpacing={0.35}>
-                  {STAGE_TITLES[marker.stage]}
-                </text>
-                <text x={0} y={17} textAnchor="middle" fill="#6d84a2" fontSize={10}>
-                  {STAGE_SUBTITLES[marker.stage]}
-                </text>
-              </g>
-            ))}
+            <div style={{ position: "absolute", top: 10, left: 14, zIndex: 3, display: "flex", gap: 12, alignItems: "center", color: "#8da0b4", fontSize: 11 }}>
+              <span>VIEW NAV</span>
+              {["Velocity", "Show Events", "Show Constraints"].map((label) => (
+                <span key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {label}
+                  <span style={{ width: 22, height: 11, borderRadius: 999, background: "rgba(142,243,160,0.7)", boxShadow: "0 0 12px rgba(142,243,160,0.45)" }} />
+                </span>
+              ))}
+            </div>
 
-            {routedNodes.map((node) => {
-              const frame = displayFrame(node);
-              return (
-                <OverlayNodeCard
-                  key={node.id}
-                  node={node}
-                  frame={frame}
-                  active={!hoveredId || highlightIds.has(node.id)}
-                  onEnter={() => setHoveredId(node.id)}
-                  onLeave={() => setHoveredId(null)}
-                />
-              );
-            })}
-          </svg>
-        </div>
+            <FlowFieldCanvas
+              preparedBundles={preparedBundles}
+              preparedEdges={preparedEdges}
+              hoveredId={hoveredId}
+              highlightIds={highlightIds}
+              activeBundles={activeBundles}
+              mode={mode}
+              onHover={setHoveredId}
+              onLeave={() => setHoveredId(null)}
+            />
 
-        <div
-          style={{
-            padding: "14px 16px",
-            borderRadius: 18,
-            border: "1px solid rgba(255,255,255,0.07)",
-            background: "rgba(7,15,28,0.52)",
-            color: "#8ca2bf",
-            fontSize: 14,
-          }}
-        >
-          {hoveredText}
+            <svg
+              viewBox={`0 0 ${FLOW_WIDTH} ${FLOW_HEIGHT}`}
+              style={{ position: "absolute", inset: 0, width: "100%", height: "100%", display: "block", transform: "scale(1.08)", transformOrigin: "50% 48%" }}
+            >
+              <SvgFlowConnections
+                preparedBundles={preparedBundles}
+                preparedEdges={preparedEdges}
+                hoveredId={hoveredId}
+                highlightIds={highlightIds}
+                activeBundles={activeBundles}
+              />
+
+              {stageMarkers.map((marker) => (
+                <g key={marker.stage} transform={`translate(${marker.x}, 62)`} opacity={0.86}>
+                  <text x={0} y={0} textAnchor="middle" fill="#c7d8ec" fontSize={12} fontWeight={800} letterSpacing={0.35}>
+                    {STAGE_TITLES[marker.stage]}
+                  </text>
+                  <text x={0} y={17} textAnchor="middle" fill="#6d84a2" fontSize={10}>
+                    {STAGE_SUBTITLES[marker.stage]}
+                  </text>
+                </g>
+              ))}
+
+              {routedNodes.map((node) => {
+                const frame = displayFrame(node);
+                return (
+                  <OverlayNodeCard
+                    key={node.id}
+                    node={node}
+                    frame={frame}
+                    active={!hoveredId || highlightIds.has(node.id)}
+                    onEnter={() => setHoveredId(node.id)}
+                    onLeave={() => setHoveredId(null)}
+                  />
+                );
+              })}
+            </svg>
+
+            <div style={{ position: "absolute", right: 12, bottom: 10, zIndex: 4, display: "grid", gap: 8 }}>
+              {[palette.blue, palette.amber, palette.red].map((color, index) => (
+                <div key={color} style={{ width: 94, height: 22, border: `1px dashed ${rgba(color, 0.5)}`, background: `linear-gradient(90deg, transparent, ${rgba(color, 0.36)})`, boxShadow: `0 0 16px ${rgba(color, 0.18)}` }}>
+                  <span style={{ color: "#8395a8", fontSize: 9, marginLeft: 7 }}>D{index + 1}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+
+          <TimelinePanel />
+          <MetricStrip summary={summary} />
+          <BottomAnalytics />
+          <div style={{ color: "#8ca2bf", fontSize: 12, padding: "0 4px" }}>{hoveredText}</div>
+        </main>
+
+        <RightSidebar summary={summary} />
+        <div style={{ gridColumn: "1 / -1" }}>
+          <DataModelFooter />
         </div>
       </div>
     </div>
