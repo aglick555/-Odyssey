@@ -96,9 +96,9 @@ const families: FlowFamily[] = [
 ];
 
 const qualitySettings: Record<Quality, { strands: number; glow: number; blur: number; dpr: number }> = {
-  safe: { strands: 4, glow: 0.65, blur: 6, dpr: 1 },
-  balanced: { strands: 8, glow: 0.9, blur: 10, dpr: 1 },
-  cinematic: { strands: 14, glow: 1.08, blur: 13, dpr: 1.1 },
+  safe: { strands: 40, glow: 0.4, blur: 4, dpr: 1.25 },
+  balanced: { strands: 120, glow: 0.5, blur: 6, dpr: 1.5 },
+  cinematic: { strands: 220, glow: 0.65, blur: 10, dpr: 1.5 },
 };
 
 function clamp(v: number, min: number, max: number) { return Math.max(min, Math.min(max, v)); }
@@ -150,10 +150,17 @@ function compressionAt(t: number) {
   return 1 - c * 0.88;
 }
 function offsetPath(pts: Point[], amount: number, seed: number, subtle: number, phase: number) {
+  // Per-strand frequency multiplier derived from seed so strands don't parallel.
+  const freqA = 2 + ((seed * 13) % 3);
+  const freqB = 5 + ((seed * 7) % 4);
+  const freqC = 11 + ((seed * 3) % 5);
   return pts.map((p, i) => {
     const t = i / Math.max(1, pts.length - 1);
     const n = normalAt(pts, i);
-    const wave = Math.sin(t * Math.PI * 2 + seed + phase) * 2.2 * subtle + Math.sin(t * Math.PI * 5 + seed * 0.7 + phase * 0.55) * 1.1 * subtle;
+    const wave =
+      Math.sin(t * Math.PI * freqA + seed + phase) * 2.6 * subtle +
+      Math.sin(t * Math.PI * freqB + seed * 0.7 + phase * 0.55) * 1.3 * subtle +
+      Math.sin(t * Math.PI * freqC + seed * 1.3 + phase * 0.3) * 0.55 * subtle;
     const c = amount * compressionAt(t);
     return { x: p.x + n.x * (c + wave), y: p.y + n.y * (c + wave) };
   });
@@ -207,8 +214,8 @@ function drawFlow(ctx: CanvasRenderingContext2D, mode: Mode, quality: Quality, p
   paths.forEach(({ family, points }) => {
     const dim = highlightId && highlightId !== family.id ? 0.25 : 1;
     const thickness = 18 + family.value * 1.25;
-    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.026 : 0.038) * dim), thickness * 1.72, 1, q.blur);
-    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.04 : 0.07) * dim), thickness * 0.9, 1, Math.max(3, q.blur * 0.42));
+    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.01 : 0.016) * dim), thickness * 1.72, 1, q.blur);
+    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.015 : 0.025) * dim), thickness * 0.8, 1, Math.max(3, q.blur * 0.42));
   });
   const cg = ctx.createLinearGradient(anchors.activityX - 150, CORE_Y, anchors.activityX + 170, CORE_Y);
   cg.addColorStop(0, "rgba(90,160,255,0.035)");
@@ -221,17 +228,37 @@ function drawFlow(ctx: CanvasRenderingContext2D, mode: Mode, quality: Quality, p
   glowCircle(ctx, anchors.activityX, CORE_Y, 145 * q.glow, "#8ff4ff", 0.048 * q.glow);
   glowCircle(ctx, anchors.activityX - 60, CORE_Y, 90 * q.glow, "#8ff4ff", 0.012 * q.glow);
   paths.forEach(({ family, points }) => {
-    const dim = highlightId && highlightId !== family.id ? 0.2 : 1;
+    const dim = highlightId && highlightId !== family.id ? 0.25 : 1;
     const boost = highlightId === family.id ? 1.35 : 1;
     const thickness = 11 + family.value * 0.62;
-    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.16 : 0.22) * dim * boost), thickness * 0.48, 1, Math.max(1, q.blur * 0.28));
-    strokePath(ctx, points, rgba("#ffffff", (mode === "delta" ? 0.018 : 0.03) * dim * boost), Math.max(1.5, thickness * 0.1), 1, 0.8);
     const strands = q.strands;
+    // Outer fan: wide spread, highly variable waves — each strand has its own character.
     for (let i = 0; i < strands; i += 1) {
       const ratio = strands <= 1 ? 0 : i / (strands - 1);
-      const off = (ratio - 0.5) * thickness * 1.1;
-      const strand = offsetPath(points, off, i * 1.73 + family.value, quality === "cinematic" ? 0.8 : 0.58, phase);
-      strokePath(ctx, strand, rgba(family.color, 0.13 * dim * boost), 1, 1, i % 3 === 0 ? 1 : 0);
+      // Bias offset non-linearly so edges are less dense than middle.
+      const bias = Math.sign(ratio - 0.5) * Math.pow(Math.abs(ratio - 0.5) * 2, 1.4) * 0.5;
+      const off = bias * thickness * 4.2;
+      const seed = i * 1.73 + family.value * (1 + (i % 7) * 0.13);
+      // Per-strand wave amplitude varies 3x, creating crossings.
+      const subtle = 1.2 + (i % 11) * 0.35;
+      const strand = offsetPath(points, off, seed, subtle, phase * (0.6 + (i % 5) * 0.18));
+      strokePath(ctx, strand, rgba(family.color, 0.13 * dim * boost), 1, 1, i % 7 === 0 ? 1 : 0);
+    }
+    // Mid fan: narrower, brighter — identity band with moderate waves.
+    const midCount = Math.floor(strands * 0.35);
+    for (let i = 0; i < midCount; i += 1) {
+      const ratio = midCount <= 1 ? 0 : i / (midCount - 1);
+      const off = (ratio - 0.5) * thickness * 1.3;
+      const subtle = 0.7 + (i % 3) * 0.25;
+      const strand = offsetPath(points, off, i * 2.11 + family.value * 2.3, subtle, phase * 0.9);
+      strokePath(ctx, strand, rgba(family.color, 0.24 * dim * boost), 1, 1, i % 3 === 0 ? 1 : 0);
+    }
+    // Core spine: brightest filaments along the family's axis.
+    const core = 7;
+    for (let i = 0; i < core; i += 1) {
+      const off = (i / (core - 1) - 0.5) * thickness * 0.35;
+      const strand = offsetPath(points, off, i * 3.7 + family.value * 1.1, 0.45, phase * 0.8);
+      strokePath(ctx, strand, rgba(family.color, 0.42 * dim * boost), 1.1, 1, 1);
     }
   });
   ctx.restore();
