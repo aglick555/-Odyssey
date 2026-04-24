@@ -76,43 +76,28 @@ vec4 over(vec4 acc, vec3 srcRgb, float srcA) {
 
 void main() {
   float d = abs(vSide);
-  // Soft halo just outside the body; flat body; narrow rim highlight at
-  // the body edge; hairline white centerline. Tuned so each layer is an
-  // independent alpha contribution rather than additive brightness.
-  float halo = exp(-d * d * 2.0) * (1.0 - smoothstep(0.75, 1.0, d));
-  float body = 1.0 - smoothstep(0.72, 0.98, d);
-  float rim = smoothstep(0.55, 0.85, d) * (1.0 - smoothstep(0.85, 0.98, d));
-  float core = exp(-d * d * 240.0);
+  // Two layers only: a soft halo just outside the body, and a fully-opaque
+  // flat body inside. No rim highlight, no centerline — uniform saturated
+  // color all the way across the beam.
+  float halo = exp(-d * d * 2.2) * (1.0 - smoothstep(0.85, 1.0, d));
+  float body = 1.0 - smoothstep(0.86, 0.99, d);
 
-  float lenFade = smoothstep(0.0, 0.22, vT) * (1.0 - smoothstep(0.96, 1.0, vT));
-  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.2;
+  float lenFade = smoothstep(0.0, 0.2, vT) * (1.0 - smoothstep(0.97, 1.0, vT));
 
-  // Subtle noise modulation along the beam — gives dust/grain feel without
-  // a separate particle pass.
-  float g = 0.7 + 0.4 * hash12(floor(vWorld * 0.35) + floor(vec2(uTime * 0.7, 0.0)));
-  float grainMix = mix(0.88, 1.08, g);
+  // Very subtle grain modulation on the body alpha for a hint of fiber
+  // texture inside the beam without visible particles.
+  float g = 0.85 + 0.2 * hash12(floor(vWorld * 0.3) + floor(vec2(uTime * 0.5, 0.0)));
 
-  // Layer alphas (straight, 0..~1).
-  float aHalo = clamp(halo * 0.45, 0.0, 1.0);
-  float aBody = clamp(body * 0.92 * grainMix, 0.0, 1.0);
-  float aRim = clamp(rim * 0.7, 0.0, 1.0);
-  float aCore = clamp(core * 0.65, 0.0, 1.0);
+  float aHalo = clamp(halo * 0.35, 0.0, 1.0);
+  float aBody = clamp(body * g, 0.0, 1.0);
 
-  // Per-layer colors.
-  vec3 cHalo = vColor * 0.85;
+  vec3 cHalo = vColor * 0.8;
   vec3 cBody = vColor;
-  vec3 cRim = mix(vColor, vec3(1.0), 0.25);
-  vec3 cCore = vec3(1.0);
 
-  // Composite halo -> body -> rim -> core using over.
   vec4 acc = vec4(cHalo, aHalo);
   acc = over(acc, cBody, aBody);
-  acc = over(acc, cRim, aRim);
-  acc = over(acc, cCore, aCore);
 
-  // Modulate overall opacity by length + intensity.
-  float finalA = acc.a * lenFade * cardBoost * vIntensity;
-  // Premultiplied alpha output for gl.ONE, gl.ONE_MINUS_SRC_ALPHA blend.
+  float finalA = acc.a * lenFade * vIntensity;
   gl_FragColor = vec4(acc.rgb * finalA, finalA);
 }
 `;
