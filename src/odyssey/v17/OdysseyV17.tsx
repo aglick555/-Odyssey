@@ -122,18 +122,19 @@ function sampleSegment(a: Point, b: Point, c: Point, d: Point, steps: number) {
   return pts;
 }
 function buildFamilyPath(flow: FlowFamily) {
+  // Parallel-beam layout: each family stays in its own horizontal lane through
+  // the whole flow. Gentle S-curves connect source -> allocation -> activity
+  // midpoint -> outcome -> result anchors with no convergence to a shared core.
   const p0 = { x: anchors.sourceX, y: flow.sourceY };
   const p1 = { x: anchors.allocationX, y: flow.allocationY };
-  const p2 = { x: anchors.activityX - 90, y: lerp(flow.allocationY, CORE_Y, 0.62) };
-  const p3 = { x: anchors.activityX + 80, y: CORE_Y + (flow.outcomeY - CORE_Y) * 0.12 };
+  const mid = { x: anchors.activityX, y: lerp(flow.allocationY, flow.outcomeY, 0.5) };
   const p4 = { x: anchors.outcomeX, y: flow.outcomeY };
   const p5 = { x: anchors.resultX, y: flow.resultY };
   const left = sampleSegment(p0, { x: 260, y: p0.y }, { x: 330, y: p1.y }, p1, 22);
-  const enter = sampleSegment(p1, { x: 540, y: p1.y }, { x: 610, y: p2.y }, p2, 18).slice(1);
-  const core = sampleSegment(p2, { x: 710, y: CORE_Y }, { x: 790, y: CORE_Y }, p3, 24).slice(1);
-  const exit = sampleSegment(p3, { x: 890, y: p3.y }, { x: 960, y: p4.y }, p4, 18).slice(1);
+  const activityIn = sampleSegment(p1, { x: 580, y: p1.y }, { x: 680, y: mid.y }, mid, 24).slice(1);
+  const activityOut = sampleSegment(mid, { x: 850, y: mid.y }, { x: 960, y: p4.y }, p4, 24).slice(1);
   const result = sampleSegment(p4, { x: 1190, y: p4.y }, { x: 1260, y: p5.y }, p5, 22).slice(1);
-  return [...left, ...enter, ...core, ...exit, ...result];
+  return [...left, ...activityIn, ...activityOut, ...result];
 }
 function pointAt(path: Point[], t: number) {
   const idx = Math.round(clamp(t, 0, 1) * (path.length - 1));
@@ -230,23 +231,10 @@ function drawBackground(ctx: CanvasRenderingContext2D) {
   ctx.restore();
 }
 
-// 2D canvas only handles background + compression corridor now.
-// Strands are drawn by the WebGL layer above.
-function drawFlow(ctx: CanvasRenderingContext2D, _mode: Mode, quality: Quality, _phase: number, _highlightId: string | null) {
-  const q = qualitySettings[quality];
-  const cg = ctx.createLinearGradient(anchors.activityX - 150, CORE_Y, anchors.activityX + 170, CORE_Y);
-  cg.addColorStop(0, "rgba(90,160,255,0.035)");
-  cg.addColorStop(0.45, "rgba(150,245,255,0.10)");
-  cg.addColorStop(1, "rgba(70,225,210,0.045)");
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = cg;
-  ctx.beginPath();
-  ctx.roundRect(anchors.activityX - 170, CORE_Y - 52, 355, 104, 52);
-  ctx.fill();
-  glowCircle(ctx, anchors.activityX, CORE_Y, 145 * q.glow, "#8ff4ff", 0.048 * q.glow);
-  glowCircle(ctx, anchors.activityX - 60, CORE_Y, 90 * q.glow, "#8ff4ff", 0.012 * q.glow);
-  ctx.restore();
+// 2D canvas no longer draws any flow — everything is in the WebGL layer now.
+// Kept as a no-op so the 2D canvas continues painting background + stars only.
+function drawFlow(_ctx: CanvasRenderingContext2D, _mode: Mode, _quality: Quality, _phase: number, _highlightId: string | null) {
+  // intentionally empty
 }
 
 function renderCanvas(canvas: HTMLCanvasElement, mode: Mode, quality: Quality, phase: number, highlightId: string | null) {
@@ -716,7 +704,7 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
       if (renderer) {
         renderer.buildGeometry(
           familyPaths,
-          { strandsPerFamily: 18, bundleWidth: 48, glowWidth: 12, leadEvery: 3, sparklesPerStrand: 4 },
+          { beamHalfWidth: 55, grainParticles: 180 },
           phase,
         );
         renderer.render(highlightRef.current);
