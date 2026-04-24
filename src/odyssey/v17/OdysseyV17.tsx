@@ -714,7 +714,11 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
       const phase = ((now - start) / 1000) * 0.6;
       renderCanvas(canvas, mode, quality, phase, highlightRef.current);
       if (renderer) {
-        renderer.buildGeometry(familyPaths, { strandsPerFamily: 22, bundleWidth: 38, glowWidth: 18 }, phase);
+        renderer.buildGeometry(
+          familyPaths,
+          { strandsPerFamily: 18, bundleWidth: 48, glowWidth: 12, leadEvery: 3, sparklesPerStrand: 4 },
+          phase,
+        );
         renderer.render(highlightRef.current);
       }
       raf = requestAnimationFrame(tick);
