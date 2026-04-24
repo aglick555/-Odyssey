@@ -191,6 +191,17 @@ function glowCircle(ctx: CanvasRenderingContext2D, x: number, y: number, r: numb
   ctx.fill();
 }
 
+// Deterministic star positions — pinpoints in the black space, like the reference.
+const STARS: { x: number; y: number; r: number; a: number }[] = (() => {
+  let s = 1337;
+  const rand = () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+  const out: { x: number; y: number; r: number; a: number }[] = [];
+  for (let i = 0; i < 320; i += 1) {
+    out.push({ x: rand() * WIDTH, y: rand() * HEIGHT, r: 0.4 + rand() * 1.1, a: 0.18 + rand() * 0.5 });
+  }
+  return out;
+})();
+
 function drawBackground(ctx: CanvasRenderingContext2D) {
   ctx.globalCompositeOperation = "source-over";
   ctx.fillStyle = "#02070f";
@@ -204,6 +215,18 @@ function drawBackground(ctx: CanvasRenderingContext2D) {
   v.addColorStop(1, "rgba(0,0,0,0.6)");
   ctx.fillStyle = v;
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  // Pinpoint stars scattered across the black space.
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "#eaf4ff";
+  for (let i = 0; i < STARS.length; i += 1) {
+    const s = STARS[i];
+    ctx.globalAlpha = s.a;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 }
 
 function drawFlow(ctx: CanvasRenderingContext2D, mode: Mode, quality: Quality, phase: number, highlightId: string | null) {
@@ -259,6 +282,23 @@ function drawFlow(ctx: CanvasRenderingContext2D, mode: Mode, quality: Quality, p
       const off = (i / (core - 1) - 0.5) * thickness * 0.35;
       const strand = offsetPath(points, off, i * 3.7 + family.value * 1.1, 0.45, phase * 0.8);
       strokePath(ctx, strand, rgba(family.color, 0.42 * dim * boost), 1.1, 1, 1);
+      // Sparkle embers along this core strand — reference has particle-like brightness along each line.
+      const embers = 4;
+      ctx.save();
+      ctx.shadowBlur = 4;
+      ctx.shadowColor = family.color;
+      ctx.fillStyle = family.color;
+      for (let j = 0; j < embers; j += 1) {
+        const t = 0.12 + ((i * 7 + j * 19) % 100) / 130 + j * 0.2;
+        const tClamp = t > 0.9 ? 0.9 : t < 0.1 ? 0.1 : t;
+        const idx = Math.floor(tClamp * (strand.length - 1));
+        const p = strand[idx];
+        ctx.globalAlpha = 0.55 * dim * boost;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 0.8 + ((j * 3) % 4) / 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.restore();
     }
   });
   ctx.restore();
