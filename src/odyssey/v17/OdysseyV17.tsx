@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import CinematicFlowView from "../cinematic/CinematicFlowView";
 
 type Mode = "actual" | "robust" | "delta";
 type Quality = "safe" | "balanced" | "cinematic";
@@ -17,8 +18,51 @@ type FlowFamily = {
   age: string;
   utilization: number;
   scenario: number;
-  scenarioDelta: string;
 };
+
+function scenarioDeltaPct(value: number, scenario: number) {
+  if (value === 0) return "0.0%";
+  const d = ((scenario - value) / value) * 100;
+  const sign = d > 0 ? "+" : "";
+  return `${sign}${d.toFixed(1)}%`;
+}
+
+function scenarioDeltaAbs(value: number, scenario: number) {
+  const d = scenario - value;
+  const sign = d > 0 ? "+" : "";
+  return `${sign}${d.toFixed(1)}M`;
+}
+
+type AttributionRow = { label: string; value: number; color: string };
+
+function attributionRowsFor(tab: string): AttributionRow[] {
+  if (tab === "By Activity") return [
+    { label: "Rebalancing", value: 28.7, color: "#b66dff" },
+    { label: "Dividends", value: 19.3, color: "#b66dff" },
+    { label: "Interest", value: 15.8, color: "#b66dff" },
+    { label: "Fees", value: 8.6, color: "#b66dff" },
+    { label: "Other (Ops)", value: 14.7, color: "#b66dff" },
+  ];
+  if (tab === "By Outcome") return [
+    { label: "Invested Value", value: 67.2, color: "#4de1d2" },
+    { label: "Cash Returned", value: 16.5, color: "#ffb044" },
+    { label: "Net Outflows", value: 3.7, color: "#ff5c66" },
+  ];
+  if (tab === "By Allocation") return [
+    { label: "Equities (Growth+Value)", value: 45.9, color: "#5ea2ff" },
+    { label: "International", value: 17.3, color: "#ffb044" },
+    { label: "Fixed Income", value: 13.2, color: "#ff5c66" },
+    { label: "Alternatives", value: 11.0, color: "#ad62ff" },
+  ];
+  // By Source (default)
+  return [
+    { label: "From Growth Fund A", value: 24.1, color: "#5ea2ff" },
+    { label: "From Value Fund B", value: 21.8, color: "#84e27a" },
+    { label: "From International C", value: 17.3, color: "#ffb044" },
+    { label: "From Bond Fund D", value: 13.2, color: "#ff5c66" },
+    { label: "From Real Estate E", value: 11.0, color: "#ad62ff" },
+  ];
+}
 
 const WIDTH = 1600;
 const HEIGHT = 680;
@@ -33,11 +77,11 @@ const anchors = {
 };
 
 const families: FlowFamily[] = [
-  { id: "growth", label: "Growth Fund A", value: 24.1, pct: "27.6%", color: "#5ea2ff", sourceY: 170, allocationY: 170, outcomeY: 215, resultY: 190, vintage: "2025 YTD", age: "Age 0–150d", utilization: 82, scenario: 26.5, scenarioDelta: "+10.0%" },
-  { id: "value", label: "Value Fund B", value: 21.8, pct: "24.9%", color: "#84e27a", sourceY: 245, allocationY: 260, outcomeY: 295, resultY: 285, vintage: "2024", age: "Age 151–365d", utilization: 71, scenario: 18.6, scenarioDelta: "-14.7%" },
-  { id: "intl", label: "International C", value: 17.3, pct: "19.8%", color: "#ffb044", sourceY: 325, allocationY: 350, outcomeY: 380, resultY: 390, vintage: "2023", age: "Age 1y–2y", utilization: 65, scenario: 17.3, scenarioDelta: "0.0%" },
-  { id: "bond", label: "Bond Fund D", value: 13.2, pct: "15.1%", color: "#ff5c66", sourceY: 405, allocationY: 440, outcomeY: 455, resultY: 495, vintage: "2022", age: "Age 2y–3y", utilization: 78, scenario: 12.6, scenarioDelta: "-4.5%" },
-  { id: "real", label: "Real Estate E", value: 11.0, pct: "12.6%", color: "#ad62ff", sourceY: 485, allocationY: 530, outcomeY: 540, resultY: 600, vintage: "2021 & Prior", age: "Age 3y+", utilization: 59, scenario: 12.4, scenarioDelta: "+12.7%" },
+  { id: "growth", label: "Growth Fund A", value: 24.1, pct: "27.6%", color: "#5ea2ff", sourceY: 170, allocationY: 170, outcomeY: 215, resultY: 190, vintage: "2025 YTD", age: "Age 0–150d", utilization: 82, scenario: 26.5 },
+  { id: "value", label: "Value Fund B", value: 21.8, pct: "24.9%", color: "#84e27a", sourceY: 245, allocationY: 260, outcomeY: 295, resultY: 285, vintage: "2024", age: "Age 151–365d", utilization: 71, scenario: 18.6 },
+  { id: "intl", label: "International C", value: 17.3, pct: "19.8%", color: "#ffb044", sourceY: 325, allocationY: 350, outcomeY: 380, resultY: 390, vintage: "2023", age: "Age 1y–2y", utilization: 65, scenario: 17.3 },
+  { id: "bond", label: "Bond Fund D", value: 13.2, pct: "15.1%", color: "#ff5c66", sourceY: 405, allocationY: 440, outcomeY: 455, resultY: 495, vintage: "2022", age: "Age 2y–3y", utilization: 78, scenario: 12.6 },
+  { id: "real", label: "Real Estate E", value: 11.0, pct: "12.6%", color: "#ad62ff", sourceY: 485, allocationY: 530, outcomeY: 540, resultY: 600, vintage: "2021 & Prior", age: "Age 3y+", utilization: 59, scenario: 12.4 },
 ];
 
 const qualitySettings: Record<Quality, { strands: number; glow: number; blur: number; dpr: number }> = {
@@ -525,8 +569,8 @@ function StageHeader({ icon, n, title, sub, color, x }: { icon: React.ReactNode;
 }
 
 function FundCard({ flow, x, y, active, dimmed, onHover }: { flow: FlowFamily; x: number; y: number; active: boolean; dimmed: boolean; onHover: (id: string | null) => void }) {
-  const delta = flow.scenarioDelta;
-  const deltaColor = delta.startsWith("-") ? "#ff5c66" : delta === "0.0%" ? "#7890ad" : "#84e27a";
+  const delta = scenarioDeltaPct(flow.value, flow.scenario);
+  const deltaColor = delta.startsWith("-") ? "#ff5c66" : delta === "+0.0%" || delta === "0.0%" ? "#7890ad" : "#84e27a";
   return (
     <div
       onMouseEnter={() => onHover(flow.id)}
@@ -908,26 +952,25 @@ function BottomPanels() {
             <button key={t} onClick={() => setAttrTab(t)} style={{ padding: "3px 7px", borderRadius: 4, border: "1px solid rgba(255,255,255,0.08)", background: attrTab === t ? "rgba(94,162,255,0.18)" : "transparent", color: attrTab === t ? "#5ea2ff" : "#9fb2ca", fontSize: 9, fontWeight: 700, cursor: "pointer" }}>{t}</button>
           ))}
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Donut segments={families.map((f) => ({ color: f.color, value: f.value })).concat([{ color: "#8da3bf", value: 3.3 }])} centerLabel="$92.1M" centerSub="Ending NAV" size={96} inner={58} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, flex: 1 }}>
-            {[
-              { lbl: "From Growth Fund A", c: "#5ea2ff", v: "$27.8M", p: "30.2%" },
-              { lbl: "From Value Fund B", c: "#84e27a", v: "$23.1M", p: "25.1%" },
-              { lbl: "From International C", c: "#ffb044", v: "$17.8M", p: "19.3%" },
-              { lbl: "From Bond Fund D", c: "#ff5c66", v: "$13.5M", p: "14.7%" },
-              { lbl: "From Real Estate E", c: "#ad62ff", v: "$6.6M", p: "7.2%" },
-              { lbl: "From Other", c: "#8da3bf", v: "$3.3M", p: "3.5%" },
-            ].map((r) => (
-              <div key={r.lbl} style={{ display: "flex", gap: 5, alignItems: "center" }}>
-                <Dot color={r.c} size={6} />
-                <div style={{ color: "#9fb2ca", flex: 1, fontSize: 9 }}>{r.lbl}</div>
-                <div style={{ color: "#eef6ff", fontSize: 9 }}>{r.v}</div>
-                <div style={{ color: "#7890ad", fontSize: 9 }}>{r.p}</div>
+        {(() => {
+          const rows = attributionRowsFor(attrTab);
+          const total = rows.reduce((s, r) => s + r.value, 0);
+          return (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Donut segments={rows.map((r) => ({ color: r.color, value: r.value }))} centerLabel={`$${total.toFixed(1)}M`} centerSub={attrTab.replace("By ", "")} size={96} inner={58} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 3, fontSize: 10, flex: 1 }}>
+                {rows.map((r) => (
+                  <div key={r.label} style={{ display: "flex", gap: 5, alignItems: "center" }}>
+                    <Dot color={r.color} size={6} />
+                    <div style={{ color: "#9fb2ca", flex: 1, fontSize: 9 }}>{r.label}</div>
+                    <div style={{ color: "#eef6ff", fontSize: 9 }}>${r.value.toFixed(1)}M</div>
+                    <div style={{ color: "#7890ad", fontSize: 9 }}>{((r.value / total) * 100).toFixed(1)}%</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-        </div>
+            </div>
+          );
+        })()}
       </Panel>
 
       <Panel title="Constraint Inspector">
@@ -1011,27 +1054,30 @@ function DataModelStrip() {
 
 // --- Top Bar -------------------------------------------------------------
 
-function TopBar() {
-  const [tab, setTab] = useState("Flow Monitor");
-  const tabs = [
-    { n: "Flow Monitor", i: Icon.Activity },
-    { n: "Scenario Studio", i: Icon.Flask },
-    { n: "Path Explorer", i: Icon.Compass },
-    { n: "Constraint Inspector", i: Icon.AlertTriangle },
-    { n: "Attribution Engine", i: Icon.Crosshair },
-    { n: "Reports", i: Icon.FileText },
-  ];
+const TABS = [
+  { n: "Flow Monitor", i: Icon.Activity },
+  { n: "Scenario Studio", i: Icon.Flask },
+  { n: "Path Explorer", i: Icon.Compass },
+  { n: "Constraint Inspector", i: Icon.AlertTriangle },
+  { n: "Attribution Engine", i: Icon.Crosshair },
+  { n: "Reports", i: Icon.FileText },
+] as const;
+
+function TopBar({ tab, onTab, onCinematic }: { tab: string; onTab: (t: string) => void; onCinematic: () => void }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <div style={{ fontSize: 24, fontWeight: 900, letterSpacing: -0.8, color: "#eef6ff" }}>Capital Flow Odyssey</div>
-        <div style={{ fontSize: 11, color: "#5ea2ff", fontWeight: 900, background: "rgba(94,162,255,0.12)", padding: "2px 7px", borderRadius: 6, border: "1px solid rgba(94,162,255,0.3)" }}>v17</div>
+        <div style={{ display: "inline-flex", background: "rgba(255,255,255,0.04)", borderRadius: 6, padding: 2, border: "1px solid rgba(255,255,255,0.06)", marginLeft: 4 }}>
+          <button style={{ padding: "3px 9px", borderRadius: 4, border: "none", background: "rgba(94,162,255,0.18)", color: "#5ea2ff", fontSize: 10, fontWeight: 900, cursor: "pointer" }}>v17</button>
+          <button onClick={onCinematic} style={{ padding: "3px 9px", borderRadius: 4, border: "none", background: "transparent", color: "#8da3bf", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>Cinematic</button>
+        </div>
       </div>
       <div style={{ display: "flex", gap: 2 }}>
-        {tabs.map((t) => {
+        {TABS.map((t) => {
           const active = tab === t.n;
           return (
-            <button key={t.n} onClick={() => setTab(t.n)} style={{ padding: "7px 12px", display: "flex", alignItems: "center", gap: 6, borderRadius: 6, border: "none", background: active ? "rgba(94,162,255,0.14)" : "transparent", color: active ? "#5ea2ff" : "#9fb2ca", fontSize: 11, fontWeight: 700, cursor: "pointer", borderBottom: active ? "2px solid #5ea2ff" : "2px solid transparent" }}>
+            <button key={t.n} onClick={() => onTab(t.n)} style={{ padding: "7px 12px", display: "flex", alignItems: "center", gap: 6, borderRadius: 6, border: "none", background: active ? "rgba(94,162,255,0.14)" : "transparent", color: active ? "#5ea2ff" : "#9fb2ca", fontSize: 11, fontWeight: 700, cursor: "pointer", borderBottom: active ? "2px solid #5ea2ff" : "2px solid transparent" }}>
               {t.i(active ? "#5ea2ff" : "#9fb2ca")} {t.n}
             </button>
           );
@@ -1043,6 +1089,267 @@ function TopBar() {
           <button key={i} style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(8,14,26,0.6)", color: "#9fb2ca", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{I("#9fb2ca")}</button>
         ))}
       </div>
+    </div>
+  );
+}
+
+// --- Tab Views -----------------------------------------------------------
+
+function FlowMonitorView() {
+  return (
+    <>
+      <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "245px 1fr 290px", gap: 8 }}>
+        <LeftSidebar />
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          <CenterFlow />
+          <Timeline />
+        </div>
+        <RightSidebar />
+      </div>
+      <SummaryRow />
+      <BottomPanels />
+    </>
+  );
+}
+
+function ScenarioStudioView() {
+  const [overrides, setOverrides] = useState<Record<string, number>>({});
+  const bump = (id: string, d: number) => setOverrides((o) => ({ ...o, [id]: clamp((o[id] ?? 0) + d, -25, 25) }));
+  const applied = families.map((f) => {
+    const pct = overrides[f.id] ?? 0;
+    const scen = f.value * (1 + pct / 100);
+    return { ...f, scenario: scen, overridePct: pct };
+  });
+  const totalActual = families.reduce((s, f) => s + f.value, 0);
+  const totalScenario = applied.reduce((s, f) => s + f.scenario, 0);
+  return (
+    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 360px", gap: 8 }}>
+      <Panel title="Scenario Studio" right={<button onClick={() => setOverrides({})} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#9fb2ca", fontSize: 10, padding: "4px 8px", borderRadius: 4, cursor: "pointer" }}>Reset</button>}>
+        <div style={{ fontSize: 11, color: "#9fb2ca", marginBottom: 10 }}>Adjust each allocation in ±25% increments. The right panel shows live impact on aggregate NAV.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {applied.map((f) => (
+            <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", border: `1px solid ${rgba(f.color, 0.28)}`, borderRadius: 8, background: `linear-gradient(180deg, ${rgba(f.color, 0.06)}, rgba(7,15,28,0.4))` }}>
+              <Dot color={f.color} size={10} />
+              <div style={{ minWidth: 140 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#eef6ff" }}>{f.label}</div>
+                <div style={{ fontSize: 10, color: "#7890ad" }}>Base ${f.value.toFixed(1)}M</div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <button onClick={() => bump(f.id, -5)} style={{ width: 26, height: 26, borderRadius: 4, border: "1px solid rgba(255,90,120,0.4)", background: "rgba(255,90,120,0.08)", color: "#ff5c66", fontWeight: 900, cursor: "pointer" }}>-5%</button>
+                <button onClick={() => bump(f.id, -1)} style={{ width: 26, height: 26, borderRadius: 4, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)", color: "#9fb2ca", fontWeight: 900, cursor: "pointer" }}>-1</button>
+                <div style={{ minWidth: 52, textAlign: "center", fontSize: 14, fontWeight: 900, color: f.overridePct > 0 ? "#84e27a" : f.overridePct < 0 ? "#ff5c66" : "#eef6ff" }}>{f.overridePct > 0 ? "+" : ""}{f.overridePct}%</div>
+                <button onClick={() => bump(f.id, 1)} style={{ width: 26, height: 26, borderRadius: 4, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)", color: "#9fb2ca", fontWeight: 900, cursor: "pointer" }}>+1</button>
+                <button onClick={() => bump(f.id, 5)} style={{ width: 26, height: 26, borderRadius: 4, border: "1px solid rgba(132,226,122,0.4)", background: "rgba(132,226,122,0.08)", color: "#84e27a", fontWeight: 900, cursor: "pointer" }}>+5%</button>
+              </div>
+              <div style={{ marginLeft: "auto", textAlign: "right", minWidth: 110 }}>
+                <div style={{ fontSize: 16, fontWeight: 900, color: "white" }}>${f.scenario.toFixed(1)}M</div>
+                <div style={{ fontSize: 10, color: f.overridePct > 0 ? "#84e27a" : f.overridePct < 0 ? "#ff5c66" : "#7890ad", fontWeight: 800 }}>{scenarioDeltaAbs(f.value, f.scenario)} · {scenarioDeltaPct(f.value, f.scenario)}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <Panel title="Scenario Impact">
+          <div style={{ fontSize: 10, color: "#7890ad" }}>Base NAV</div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#eef6ff" }}>${totalActual.toFixed(1)}M</div>
+          <div style={{ marginTop: 10, fontSize: 10, color: "#7890ad" }}>Scenario NAV</div>
+          <div style={{ fontSize: 26, fontWeight: 900, color: totalScenario > totalActual ? "#84e27a" : totalScenario < totalActual ? "#ff5c66" : "#eef6ff" }}>${totalScenario.toFixed(1)}M</div>
+          <div style={{ marginTop: 2, fontSize: 11, fontWeight: 800, color: totalScenario > totalActual ? "#84e27a" : totalScenario < totalActual ? "#ff5c66" : "#7890ad" }}>
+            {scenarioDeltaAbs(totalActual, totalScenario)} · {scenarioDeltaPct(totalActual, totalScenario)}
+          </div>
+          <button style={{ marginTop: 16, width: "100%", padding: "10px", borderRadius: 6, border: "1px solid rgba(94,162,255,0.4)", background: "rgba(94,162,255,0.14)", color: "#5ea2ff", fontWeight: 800, fontSize: 12, cursor: "pointer" }}>Save Scenario</button>
+        </Panel>
+        <Panel title="Stored Scenarios">
+          <div style={{ fontSize: 10, color: "#7890ad" }}>No saved scenarios yet. Use Save above.</div>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+function PathExplorerView() {
+  const [fromId, setFromId] = useState<string>("growth");
+  const paths = [
+    { from: "growth", stages: ["Growth Fund A", "Rebalancing", "Invested Value", "Ending NAV"], values: ["$24.1M", "$13.0M", "$9.8M", "$27.8M"], pct: "30.2%", color: "#5ea2ff" },
+    { from: "value", stages: ["Value Fund B", "Dividends", "Cash Returned", "Distributions"], values: ["$21.8M", "$8.1M", "$5.4M", "$4.1M"], pct: "25.1%", color: "#84e27a" },
+    { from: "intl", stages: ["International C", "Interest", "Invested Value", "Ending NAV"], values: ["$17.3M", "$6.1M", "$5.0M", "$17.8M"], pct: "19.3%", color: "#ffb044" },
+    { from: "bond", stages: ["Bond Fund D", "Fees", "Net Outflows", "Distributions"], values: ["$13.2M", "$2.8M", "$1.2M", "$2.4M"], pct: "14.7%", color: "#ff5c66" },
+    { from: "real", stages: ["Real Estate E", "Rebalancing", "Invested Value", "Ending NAV"], values: ["$11.0M", "$4.0M", "$3.1M", "$6.6M"], pct: "7.2%", color: "#ad62ff" },
+  ];
+  return (
+    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "240px 1fr", gap: 8 }}>
+      <Panel title="Source Filter">
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <button onClick={() => setFromId("")} style={{ padding: "8px 10px", borderRadius: 6, border: `1px solid ${fromId === "" ? "rgba(94,162,255,0.5)" : "rgba(255,255,255,0.08)"}`, background: fromId === "" ? "rgba(94,162,255,0.14)" : "transparent", color: fromId === "" ? "#5ea2ff" : "#9fb2ca", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "left" }}>All sources</button>
+          {families.map((f) => (
+            <button key={f.id} onClick={() => setFromId(f.id)} style={{ padding: "8px 10px", borderRadius: 6, border: `1px solid ${fromId === f.id ? rgba(f.color, 0.5) : "rgba(255,255,255,0.08)"}`, background: fromId === f.id ? rgba(f.color, 0.14) : "transparent", color: fromId === f.id ? f.color : "#9fb2ca", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+              <Dot color={f.color} size={8} />{f.label}
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="Capital Paths" right={<span style={{ fontSize: 9, color: "#7890ad" }}>Source → Result</span>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {paths.filter((p) => !fromId || p.from === fromId).map((p, i) => (
+            <div key={i} style={{ padding: 12, borderRadius: 8, border: `1px solid ${rgba(p.color, 0.22)}`, background: "rgba(8,14,26,0.5)" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <Dot color={p.color} size={8} />
+                <div style={{ fontSize: 12, fontWeight: 800, color: "#eef6ff" }}>Path {i + 1}</div>
+                <div style={{ marginLeft: "auto", color: p.color, fontWeight: 800, fontSize: 13 }}>{p.pct}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: `repeat(${p.stages.length}, 1fr)`, gap: 6, alignItems: "center" }}>
+                {p.stages.map((s, j) => (
+                  <React.Fragment key={j}>
+                    <div style={{ padding: "6px 8px", borderRadius: 5, background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                      <div style={{ fontSize: 10, color: "#9fb2ca" }}>{s}</div>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#eef6ff" }}>{p.values[j]}</div>
+                    </div>
+                  </React.Fragment>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function ConstraintInspectorView() {
+  const [selected, setSelected] = useState(0);
+  const list = [
+    { name: "Rebalancing Capacity", type: "Capacity", impact: "High", pct: "21.4%", resolved: true, color: "#ff5c66" },
+    { name: "Q2 Liquidity Window", type: "Liquidity", impact: "Medium", pct: "12.8%", resolved: true, color: "#ffb044" },
+    { name: "Market Impact Throttle", type: "Market", impact: "Medium", pct: "8.2%", resolved: true, color: "#ffb044" },
+    { name: "Operational Lockup", type: "Operational", impact: "Low", pct: "2.1%", resolved: false, color: "#5ea2ff" },
+    { name: "Fund A Concentration Cap", type: "Capacity", impact: "Medium", pct: "14.0%", resolved: true, color: "#ffb044" },
+    { name: "Jurisdictional Freeze", type: "Operational", impact: "Low", pct: "1.1%", resolved: true, color: "#5ea2ff" },
+  ];
+  const c = list[selected];
+  return (
+    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "300px 1fr", gap: 8 }}>
+      <Panel title="Constraints" right={<span style={{ fontSize: 10, color: "#eef6ff", fontWeight: 900 }}>{list.length}</span>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {list.map((c, i) => (
+            <button key={i} onClick={() => setSelected(i)} style={{ padding: "8px 10px", borderRadius: 6, border: `1px solid ${selected === i ? rgba(c.color, 0.5) : "rgba(255,255,255,0.08)"}`, background: selected === i ? rgba(c.color, 0.12) : "transparent", color: "#eef6ff", fontSize: 12, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+              <Dot color={c.color} size={8} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700 }}>{c.name}</div>
+                <div style={{ fontSize: 9, color: "#7890ad" }}>{c.type} · {c.impact} Impact</div>
+              </div>
+              <div style={{ fontSize: 10, color: c.resolved ? "#84e27a" : "#ffb044", fontWeight: 800 }}>{c.resolved ? "✓" : "●"}</div>
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <Panel title={c.name} right={<span style={{ fontSize: 10, color: c.color, fontWeight: 800 }}>{c.impact} Impact</span>}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 10, marginBottom: 16 }}>
+          <div><div style={{ fontSize: 9, color: "#7890ad" }}>TYPE</div><div style={{ fontSize: 14, fontWeight: 800, color: "#eef6ff" }}>{c.type}</div></div>
+          <div><div style={{ fontSize: 9, color: "#7890ad" }}>IMPACTED FLOW</div><div style={{ fontSize: 14, fontWeight: 800, color: "#eef6ff" }}>{c.pct}</div></div>
+          <div><div style={{ fontSize: 9, color: "#7890ad" }}>STATUS</div><div style={{ fontSize: 14, fontWeight: 800, color: c.resolved ? "#84e27a" : "#ffb044" }}>{c.resolved ? "Resolved" : "Active"}</div></div>
+          <div><div style={{ fontSize: 9, color: "#7890ad" }}>DURATION</div><div style={{ fontSize: 14, fontWeight: 800, color: "#eef6ff" }}>14 days</div></div>
+        </div>
+        <div style={{ fontSize: 10, color: "#7890ad", marginBottom: 6 }}>Utilization over time</div>
+        <svg width="100%" height={120} viewBox="0 0 600 120" preserveAspectRatio="none">
+          <path d="M 0 110 Q 80 108 140 85 Q 200 52 260 22 Q 320 10 380 30 Q 440 60 500 95 Q 560 110 600 108" stroke={c.color} strokeWidth={2} fill={rgba(c.color, 0.12)} />
+          <line x1={0} x2={600} y1={60} y2={60} stroke="rgba(255,255,255,0.08)" strokeDasharray="3 3" />
+          <text x={6} y={56} fill="#7890ad" fontSize={9}>Peak 96%</text>
+        </svg>
+        <div style={{ marginTop: 12, fontSize: 11, color: "#9fb2ca", lineHeight: 1.6 }}>
+          This constraint capped <b style={{ color: "#eef6ff" }}>{c.pct}</b> of flow through the {c.type.toLowerCase()} stage between Feb 20 and Mar 5, 2025. Current status: <span style={{ color: c.resolved ? "#84e27a" : "#ffb044" }}>{c.resolved ? "Resolved" : "Active"}</span>.
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function AttributionEngineView() {
+  const [pivot, setPivot] = useState("source");
+  const bySource = families.map((f) => ({ color: f.color, value: f.value, label: f.label }));
+  const byActivity = [
+    { label: "Rebalancing", value: 28.7, color: "#b66dff" },
+    { label: "Dividends", value: 19.3, color: "#b66dff" },
+    { label: "Interest", value: 15.8, color: "#b66dff" },
+    { label: "Fees", value: 8.6, color: "#b66dff" },
+    { label: "Other (Ops)", value: 14.7, color: "#b66dff" },
+  ];
+  const byOutcome = [
+    { label: "Invested Value", value: 67.2, color: "#4de1d2" },
+    { label: "Cash Returned", value: 16.5, color: "#ffb044" },
+    { label: "Net Outflows", value: 3.7, color: "#ff5c66" },
+  ];
+  const pivotData = pivot === "activity" ? byActivity : pivot === "outcome" ? byOutcome : bySource;
+  const total = pivotData.reduce((s, d) => s + d.value, 0);
+  return (
+    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 380px", gap: 8 }}>
+      <Panel title="Attribution Engine" right={
+        <div style={{ display: "flex", gap: 4 }}>
+          {["source", "activity", "outcome"].map((p) => (
+            <button key={p} onClick={() => setPivot(p)} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid rgba(255,255,255,0.08)", background: pivot === p ? "rgba(94,162,255,0.18)" : "transparent", color: pivot === p ? "#5ea2ff" : "#9fb2ca", fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>By {p}</button>
+          ))}
+        </div>
+      }>
+        <div style={{ display: "flex", alignItems: "center", gap: 24, padding: 20 }}>
+          <Donut segments={pivotData} centerLabel={`$${total.toFixed(1)}M`} centerSub={`By ${pivot}`} size={220} inner={130} />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+            {pivotData.map((d) => (
+              <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
+                <Dot color={d.color} size={10} />
+                <div style={{ color: "#eef6ff", flex: 1 }}>{d.label}</div>
+                <div style={{ color: "#eef6ff", fontWeight: 800, minWidth: 70, textAlign: "right" }}>${d.value.toFixed(1)}M</div>
+                <div style={{ color: "#7890ad", minWidth: 50, textAlign: "right" }}>{((d.value / total) * 100).toFixed(1)}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </Panel>
+      <Panel title="Flow Trace" right={<span style={{ fontSize: 9, color: "#7890ad" }}>Top contributors</span>}>
+        <div style={{ fontSize: 11, color: "#9fb2ca", marginBottom: 10 }}>Click a segment (left) to drill into upstream contributors.</div>
+        {pivotData.slice().sort((a, b) => b.value - a.value).map((d, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 4, border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6 }}>
+            <div style={{ width: 20, height: 20, borderRadius: "50%", background: rgba(d.color, 0.22), color: d.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900 }}>{i + 1}</div>
+            <div style={{ flex: 1, fontSize: 11, color: "#eef6ff" }}>{d.label}</div>
+            <div style={{ color: d.color, fontSize: 11, fontWeight: 800 }}>${d.value.toFixed(1)}M</div>
+          </div>
+        ))}
+      </Panel>
+    </div>
+  );
+}
+
+function ReportsView() {
+  const reports = [
+    { title: "Q1 2025 Capital Flow Summary", date: "Apr 01, 2025", size: "2.4 MB", type: "PDF" },
+    { title: "YTD Performance Attribution", date: "May 31, 2025", size: "1.8 MB", type: "PDF" },
+    { title: "Scenario Analysis — Growth +10%", date: "May 28, 2025", size: "0.9 MB", type: "XLSX" },
+    { title: "Residual & Leakage Deep Dive", date: "May 15, 2025", size: "3.2 MB", type: "PDF" },
+    { title: "Constraint Incident Log", date: "May 01, 2025", size: "0.6 MB", type: "CSV" },
+  ];
+  return (
+    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 300px", gap: 8 }}>
+      <Panel title="Generated Reports" right={<button style={{ padding: "6px 12px", borderRadius: 6, border: "1px solid rgba(94,162,255,0.4)", background: "rgba(94,162,255,0.14)", color: "#5ea2ff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>+ Generate New</button>}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {reports.map((r, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 12px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.06)", background: "rgba(255,255,255,0.02)", cursor: "pointer" }}>
+              <div style={{ width: 32, height: 32, borderRadius: 4, background: "rgba(94,162,255,0.1)", color: "#5ea2ff", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.FileText("#5ea2ff")}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#eef6ff" }}>{r.title}</div>
+                <div style={{ fontSize: 10, color: "#7890ad" }}>{r.date} · {r.size}</div>
+              </div>
+              <div style={{ fontSize: 10, color: "#7890ad", padding: "2px 8px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.08)" }}>{r.type}</div>
+              <div style={{ color: "#5ea2ff" }}>{Icon.Download("#5ea2ff")}</div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="Quick Export">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {["Current view → PNG", "Current view → PDF", "Dataset → JSON", "Dataset → CSV", "Scenario compare → XLSX"].map((a) => (
+            <button key={a} style={{ padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)", color: "#9fb2ca", fontSize: 11, cursor: "pointer", textAlign: "left" }}>{a}</button>
+          ))}
+        </div>
+      </Panel>
     </div>
   );
 }
@@ -1059,22 +1366,55 @@ function SubBar() {
 
 // --- Root ----------------------------------------------------------------
 
+function CinematicShell({ onV17 }: { onV17: () => void }) {
+  return (
+    <div style={{ position: "relative" }}>
+      <div style={{ position: "absolute", top: 38, left: 280, zIndex: 10, display: "inline-flex", background: "rgba(10,18,32,0.78)", borderRadius: 6, padding: 2, border: "1px solid rgba(255,255,255,0.08)" }}>
+        <button onClick={onV17} style={{ padding: "3px 9px", borderRadius: 4, border: "none", background: "transparent", color: "#8da3bf", fontSize: 10, fontWeight: 800, cursor: "pointer" }}>v17</button>
+        <button style={{ padding: "3px 9px", borderRadius: 4, border: "none", background: "rgba(132,226,122,0.18)", color: "#84e27a", fontSize: 10, fontWeight: 900, cursor: "pointer" }}>Cinematic</button>
+      </div>
+      <CinematicFlowView />
+    </div>
+  );
+}
+
+function readUrlState(): { view: string; tab: string } {
+  if (typeof window === "undefined") return { view: "v17", tab: "Flow Monitor" };
+  const p = new URLSearchParams(window.location.search);
+  const tabParam = p.get("tab") || "Flow Monitor";
+  const validTab = TABS.some((t) => t.n === tabParam) ? tabParam : "Flow Monitor";
+  return { view: p.get("view") === "cinematic" ? "cinematic" : "v17", tab: validTab };
+}
+
+function writeUrlState(view: string, tab: string) {
+  if (typeof window === "undefined") return;
+  const p = new URLSearchParams(window.location.search);
+  if (view === "cinematic") p.set("view", "cinematic"); else p.delete("view");
+  if (tab !== "Flow Monitor") p.set("tab", tab); else p.delete("tab");
+  const q = p.toString();
+  window.history.replaceState(null, "", q ? `?${q}` : window.location.pathname);
+}
+
 export default function OdysseyV17() {
+  const initial = readUrlState();
+  const [view, setView] = useState<string>(initial.view);
+  const [tab, setTab] = useState<string>(initial.tab);
+
+  useEffect(() => { writeUrlState(view, tab); }, [view, tab]);
+
+  if (view === "cinematic") return <CinematicShell onV17={() => setView("v17")} />;
+
   return (
     <div style={{ minHeight: "100vh", background: "#020713", color: "white", fontFamily: "Inter, Arial, sans-serif", padding: 14, boxSizing: "border-box" }}>
       <div style={{ margin: "0 auto" }}>
-        <TopBar />
+        <TopBar tab={tab} onTab={setTab} onCinematic={() => setView("cinematic")} />
         <SubBar />
-        <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "245px 1fr 290px", gap: 8 }}>
-          <LeftSidebar />
-          <div style={{ display: "flex", flexDirection: "column" }}>
-            <CenterFlow />
-            <Timeline />
-          </div>
-          <RightSidebar />
-        </div>
-        <SummaryRow />
-        <BottomPanels />
+        {tab === "Flow Monitor" && <FlowMonitorView />}
+        {tab === "Scenario Studio" && <ScenarioStudioView />}
+        {tab === "Path Explorer" && <PathExplorerView />}
+        {tab === "Constraint Inspector" && <ConstraintInspectorView />}
+        {tab === "Attribution Engine" && <AttributionEngineView />}
+        {tab === "Reports" && <ReportsView />}
         <DataModelStrip />
         <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", color: "#6a829f", fontSize: 10, padding: "0 4px" }}>
           <span>All values in USD</span>
