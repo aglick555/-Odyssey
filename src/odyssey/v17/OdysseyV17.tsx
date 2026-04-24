@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import CinematicFlowView from "../cinematic/CinematicFlowView";
 import { odysseyDemo } from "../data/demoOdyssey";
+import { FlowRenderer } from "./FlowWebGL";
 
 // Map v17 family ids to demoOdyssey node ids where they differ.
 const V17_TO_DEMO: Record<string, string> = {
@@ -229,78 +230,22 @@ function drawBackground(ctx: CanvasRenderingContext2D) {
   ctx.restore();
 }
 
-function drawFlow(ctx: CanvasRenderingContext2D, mode: Mode, quality: Quality, phase: number, highlightId: string | null) {
+// 2D canvas only handles background + compression corridor now.
+// Strands are drawn by the WebGL layer above.
+function drawFlow(ctx: CanvasRenderingContext2D, _mode: Mode, quality: Quality, _phase: number, _highlightId: string | null) {
   const q = qualitySettings[quality];
-  const paths = families.map((f) => ({ family: f, points: buildFamilyPath(f) }));
-  ctx.save();
-  ctx.globalCompositeOperation = "lighter";
-  paths.forEach(({ family, points }) => {
-    const dim = highlightId && highlightId !== family.id ? 0.25 : 1;
-    const thickness = 18 + family.value * 1.25;
-    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.01 : 0.016) * dim), thickness * 1.72, 1, q.blur);
-    strokePath(ctx, points, rgba(family.color, (mode === "delta" ? 0.015 : 0.025) * dim), thickness * 0.8, 1, Math.max(3, q.blur * 0.42));
-  });
   const cg = ctx.createLinearGradient(anchors.activityX - 150, CORE_Y, anchors.activityX + 170, CORE_Y);
   cg.addColorStop(0, "rgba(90,160,255,0.035)");
   cg.addColorStop(0.45, "rgba(150,245,255,0.10)");
   cg.addColorStop(1, "rgba(70,225,210,0.045)");
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
   ctx.fillStyle = cg;
   ctx.beginPath();
   ctx.roundRect(anchors.activityX - 170, CORE_Y - 52, 355, 104, 52);
   ctx.fill();
   glowCircle(ctx, anchors.activityX, CORE_Y, 145 * q.glow, "#8ff4ff", 0.048 * q.glow);
   glowCircle(ctx, anchors.activityX - 60, CORE_Y, 90 * q.glow, "#8ff4ff", 0.012 * q.glow);
-  paths.forEach(({ family, points }) => {
-    const dim = highlightId && highlightId !== family.id ? 0.25 : 1;
-    const boost = highlightId === family.id ? 1.35 : 1;
-    const thickness = 11 + family.value * 0.62;
-    const strands = q.strands;
-    // Outer fan: wide spread, highly variable waves — each strand has its own character.
-    for (let i = 0; i < strands; i += 1) {
-      const ratio = strands <= 1 ? 0 : i / (strands - 1);
-      // Bias offset non-linearly so edges are less dense than middle.
-      const bias = Math.sign(ratio - 0.5) * Math.pow(Math.abs(ratio - 0.5) * 2, 1.4) * 0.5;
-      const off = bias * thickness * 4.2;
-      const seed = i * 1.73 + family.value * (1 + (i % 7) * 0.13);
-      // Per-strand wave amplitude varies 3x, creating crossings.
-      const subtle = 1.2 + (i % 11) * 0.35;
-      const strand = offsetPath(points, off, seed, subtle, phase * (0.6 + (i % 5) * 0.18));
-      strokePath(ctx, strand, rgba(family.color, 0.13 * dim * boost), 1, 1, i % 7 === 0 ? 1 : 0);
-    }
-    // Mid fan: narrower, brighter — identity band with moderate waves.
-    const midCount = Math.floor(strands * 0.35);
-    for (let i = 0; i < midCount; i += 1) {
-      const ratio = midCount <= 1 ? 0 : i / (midCount - 1);
-      const off = (ratio - 0.5) * thickness * 1.3;
-      const subtle = 0.7 + (i % 3) * 0.25;
-      const strand = offsetPath(points, off, i * 2.11 + family.value * 2.3, subtle, phase * 0.9);
-      strokePath(ctx, strand, rgba(family.color, 0.24 * dim * boost), 1, 1, i % 3 === 0 ? 1 : 0);
-    }
-    // Core spine: brightest filaments along the family's axis.
-    const core = 7;
-    for (let i = 0; i < core; i += 1) {
-      const off = (i / (core - 1) - 0.5) * thickness * 0.35;
-      const strand = offsetPath(points, off, i * 3.7 + family.value * 1.1, 0.45, phase * 0.8);
-      strokePath(ctx, strand, rgba(family.color, 0.42 * dim * boost), 1.1, 1, 1);
-      // Sparkle embers along this core strand — reference has particle-like brightness along each line.
-      const embers = 4;
-      ctx.save();
-      ctx.shadowBlur = 4;
-      ctx.shadowColor = family.color;
-      ctx.fillStyle = family.color;
-      for (let j = 0; j < embers; j += 1) {
-        const t = 0.12 + ((i * 7 + j * 19) % 100) / 130 + j * 0.2;
-        const tClamp = t > 0.9 ? 0.9 : t < 0.1 ? 0.1 : t;
-        const idx = Math.floor(tClamp * (strand.length - 1));
-        const p = strand[idx];
-        ctx.globalAlpha = 0.55 * dim * boost;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, 0.8 + ((j * 3) % 4) / 5, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.restore();
-    }
-  });
   ctx.restore();
 }
 
@@ -723,6 +668,7 @@ function RCircle({ marker, active, onClick }: { marker: RMarker; active: boolean
 
 function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const glCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const highlightRef = useRef<string | null>(null);
   const [mode] = useState<Mode>("actual");
@@ -744,15 +690,40 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
 
   useEffect(() => {
     const canvas = canvasRef.current;
+    const glCanvas = glCanvasRef.current;
     if (!canvas) return;
+
+    // Precompute family paths once — they're static geometry.
+    const familyPaths = families.map((f) => ({ id: f.id, color: f.color, value: f.value, points: buildFamilyPath(f) }));
+
+    // Spin up the WebGL renderer if possible; fall back silently if not.
+    let renderer: FlowRenderer | null = null;
+    if (glCanvas) {
+      try {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        renderer = new FlowRenderer(glCanvas, WIDTH, HEIGHT, dpr);
+      } catch (err) {
+        console.warn("[v17] WebGL unavailable, 2D-only rendering:", err);
+        renderer = null;
+      }
+    }
+
     let raf = 0;
     const start = performance.now();
     const tick = (now: number) => {
-      renderCanvas(canvas, mode, quality, ((now - start) / 1000) * 0.6, highlightRef.current);
+      const phase = ((now - start) / 1000) * 0.6;
+      renderCanvas(canvas, mode, quality, phase, highlightRef.current);
+      if (renderer) {
+        renderer.buildGeometry(familyPaths, { strandsPerFamily: 22, bundleWidth: 38, glowWidth: 18 }, phase);
+        renderer.render(highlightRef.current);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      renderer?.dispose();
+    };
   }, [mode, quality]);
 
   const cards = useMemo(() => [
@@ -786,6 +757,7 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
   return (
     <div ref={containerRef} style={{ position: "relative", flex: 1, borderRadius: 10, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(2,6,14,0.88)" }}>
       <canvas ref={canvasRef} width={WIDTH} height={HEIGHT} style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }} />
+      <canvas ref={glCanvasRef} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }} />
 
       <div style={{ position: "absolute", top: 0, left: 0, width: WIDTH, height: HEIGHT, transformOrigin: "0 0", transform: `scale(${scale.x}, ${scale.y})`, pointerEvents: "none" }}>
         <StageHeader icon={Icon.Users("#84e27a")} n="1." title="Sources" sub="Where capital comes from" color="#84e27a" x={anchors.sourceX} />
