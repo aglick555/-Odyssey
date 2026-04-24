@@ -1,9 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import PortfolioOSOdysseyFlowField from "./PortfolioOSOdysseyFlowField";
+import CinematicFlowView from "./odyssey/cinematic/CinematicFlowView";
 
-ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode>
-    <PortfolioOSOdysseyFlowField />
-  </React.StrictMode>
-);
+const root = ReactDOM.createRoot(document.getElementById("root")!);
+root.render(<CinematicFlowView />);
