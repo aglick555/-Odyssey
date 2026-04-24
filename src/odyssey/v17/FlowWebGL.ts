@@ -76,22 +76,28 @@ vec4 over(vec4 acc, vec3 srcRgb, float srcA) {
 
 void main() {
   float d = abs(vSide);
-  // Two layers only: a soft halo just outside the body, and a fully-opaque
-  // flat body inside. No rim highlight, no centerline — uniform saturated
-  // color all the way across the beam.
-  float halo = exp(-d * d * 2.2) * (1.0 - smoothstep(0.85, 1.0, d));
-  float body = 1.0 - smoothstep(0.86, 0.99, d);
+  // Wide soft halo bleeding beyond the body into the black background,
+  // a solid body, and fine horizontal striations running along the beam
+  // length (the "fiber grain" the reference shows).
+  float halo = exp(-d * d * 0.8);
+  float body = 1.0 - smoothstep(0.84, 0.98, d);
 
-  float lenFade = smoothstep(0.0, 0.2, vT) * (1.0 - smoothstep(0.97, 1.0, vT));
+  // Striations: fine hash-randomised stripes across the beam width, mostly
+  // constant along the length. Many thin slots give a natural fiber-grain
+  // look rather than chunky bands.
+  float stripeSlot = floor(vSide * 32.0);
+  float stripeRnd = hash12(vec2(stripeSlot, 0.0));
+  float stripes = 0.78 + stripeRnd * 0.32;
 
-  // Very subtle grain modulation on the body alpha for a hint of fiber
-  // texture inside the beam without visible particles.
-  float g = 0.85 + 0.2 * hash12(floor(vWorld * 0.3) + floor(vec2(uTime * 0.5, 0.0)));
+  // Very subtle along-length flicker so the grain isn't perfectly static.
+  float flicker = 0.95 + 0.08 * hash12(vec2(stripeSlot, floor(vWorld.x * 0.015 + uTime * 0.2)));
 
-  float aHalo = clamp(halo * 0.35, 0.0, 1.0);
-  float aBody = clamp(body * g, 0.0, 1.0);
+  float lenFade = smoothstep(0.0, 0.18, vT) * (1.0 - smoothstep(0.97, 1.0, vT));
 
-  vec3 cHalo = vColor * 0.8;
+  float aHalo = clamp(halo * 0.32, 0.0, 1.0);
+  float aBody = clamp(body * stripes * flicker, 0.0, 1.0);
+
+  vec3 cHalo = vColor * 0.78;
   vec3 cBody = vColor;
 
   vec4 acc = vec4(cHalo, aHalo);
