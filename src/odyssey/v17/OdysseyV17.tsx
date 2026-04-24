@@ -1,5 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import CinematicFlowView from "../cinematic/CinematicFlowView";
+import { odysseyDemo } from "../data/demoOdyssey";
+
+// Map v17 family ids to demoOdyssey node ids where they differ.
+const V17_TO_DEMO: Record<string, string> = {
+  growth: "growth",
+  value: "value",
+  intl: "intl",
+  bond: "bond",
+  real: "realEstate",
+};
+function toDemoId(v17Id: string) { return V17_TO_DEMO[v17Id] ?? v17Id; }
 
 type Mode = "actual" | "robust" | "delta";
 type Quality = "safe" | "balanced" | "cinematic";
@@ -568,13 +579,14 @@ function StageHeader({ icon, n, title, sub, color, x }: { icon: React.ReactNode;
   );
 }
 
-function FundCard({ flow, x, y, active, dimmed, onHover }: { flow: FlowFamily; x: number; y: number; active: boolean; dimmed: boolean; onHover: (id: string | null) => void }) {
+function FundCard({ flow, x, y, active, dimmed, onHover, onSelect }: { flow: FlowFamily; x: number; y: number; active: boolean; dimmed: boolean; onHover: (id: string | null) => void; onSelect: (demoId: string) => void }) {
   const delta = scenarioDeltaPct(flow.value, flow.scenario);
   const deltaColor = delta.startsWith("-") ? "#ff5c66" : delta === "+0.0%" || delta === "0.0%" ? "#7890ad" : "#84e27a";
   return (
     <div
       onMouseEnter={() => onHover(flow.id)}
       onMouseLeave={() => onHover(null)}
+      onClick={() => onSelect(toDemoId(flow.id))}
       style={{
         position: "absolute", left: x, top: y, width: 172,
         padding: "8px 10px", borderRadius: 8,
@@ -584,7 +596,7 @@ function FundCard({ flow, x, y, active, dimmed, onHover }: { flow: FlowFamily; x
         pointerEvents: "auto",
         opacity: dimmed ? 0.55 : 1,
         transition: "all 180ms ease",
-        cursor: "default",
+        cursor: "pointer",
       }}
     >
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
@@ -602,9 +614,9 @@ function FundCard({ flow, x, y, active, dimmed, onHover }: { flow: FlowFamily; x
   );
 }
 
-function ActivityRow({ icon, title, value, pct, velocity, color }: { icon: React.ReactNode; title: string; value: string; pct: string; velocity: string; color: string }) {
+function ActivityRow({ icon, title, value, pct, velocity, color, onSelect, nodeId }: { icon: React.ReactNode; title: string; value: string; pct: string; velocity: string; color: string; onSelect?: (id: string) => void; nodeId?: string }) {
   return (
-    <div style={{ padding: "6px 8px", borderRadius: 6, border: `1px solid ${rgba(color, 0.28)}`, background: "rgba(14,10,26,0.55)" }}>
+    <div onClick={nodeId && onSelect ? () => onSelect(nodeId) : undefined} style={{ padding: "6px 8px", borderRadius: 6, border: `1px solid ${rgba(color, 0.28)}`, background: "rgba(14,10,26,0.55)", cursor: nodeId && onSelect ? "pointer" : "default" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
         <div style={{ width: 18, height: 18, borderRadius: 4, background: rgba(color, 0.16), display: "flex", alignItems: "center", justifyContent: "center", color }}>{icon}</div>
         <div style={{ fontSize: 11, fontWeight: 700, color: "#eef6ff" }}>{title}</div>
@@ -626,7 +638,7 @@ function RCircle({ marker, active, onClick }: { marker: RMarker; active: boolean
   );
 }
 
-function CenterFlow() {
+function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const highlightRef = useRef<string | null>(null);
@@ -700,7 +712,7 @@ function CenterFlow() {
         <StageHeader icon={Icon.Chart("#4de1d2")} n="5." title="Results" sub="Performance impact" color="#4de1d2" x={anchors.resultX} />
 
         {/* Source totem */}
-        <div style={{ position: "absolute", left: 55, top: 160, width: 175, height: 360, borderRadius: 12, border: "1px solid rgba(132,226,122,0.42)", background: "linear-gradient(180deg, rgba(36,74,42,0.46), rgba(8,20,14,0.62))", padding: 14, boxSizing: "border-box", pointerEvents: "auto", display: "flex", flexDirection: "column", boxShadow: "0 0 36px rgba(132,226,122,0.14), inset 0 0 40px rgba(132,226,122,0.08)" }}>
+        <div onClick={() => onSelect("source")} style={{ position: "absolute", left: 55, top: 160, width: 175, height: 360, borderRadius: 12, border: "1px solid rgba(132,226,122,0.42)", background: "linear-gradient(180deg, rgba(36,74,42,0.46), rgba(8,20,14,0.62))", padding: 14, boxSizing: "border-box", pointerEvents: "auto", display: "flex", flexDirection: "column", boxShadow: "0 0 36px rgba(132,226,122,0.14), inset 0 0 40px rgba(132,226,122,0.08)", cursor: "pointer" }}>
           <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(132,226,122,0.16)", border: "1px solid rgba(132,226,122,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#84e27a" }}>{Icon.Users("#84e27a")}</div>
           <div style={{ color: "#f4fff4", fontSize: 13, fontWeight: 800, marginTop: 10, lineHeight: 1.2 }}>Total<br/>Contributions</div>
           <div style={{ marginTop: "auto" }}>
@@ -722,7 +734,7 @@ function CenterFlow() {
         </div>
 
         {cards.map(({ flow, x, y }) => (
-          <FundCard key={flow.id} flow={flow} x={x} y={y} active={highlightId === flow.id} dimmed={!!highlightId && highlightId !== flow.id} onHover={setHighlightId} />
+          <FundCard key={flow.id} flow={flow} x={x} y={y} active={highlightId === flow.id} dimmed={!!highlightId && highlightId !== flow.id} onHover={setHighlightId} onSelect={onSelect} />
         ))}
 
         {/* Window labels */}
@@ -739,16 +751,16 @@ function CenterFlow() {
         <div style={{ position: "absolute", left: 660, top: 138, width: 205, padding: "8px 9px 10px", borderRadius: 12, border: "1px solid rgba(182,109,255,0.42)", background: "rgba(20,12,36,0.56)", boxShadow: "0 0 24px rgba(182,109,255,0.12), inset 0 0 32px rgba(182,109,255,0.04)", pointerEvents: "auto" }}>
           <div style={{ fontSize: 11, color: "#b66dff", fontWeight: 900, letterSpacing: 1.2, textAlign: "center", marginBottom: 7 }}>ACTIVITY</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <ActivityRow icon={Icon.Scale("#b66dff")} title="Rebalancing" value="$28.7M" pct="32.9%" velocity="1.33x" color="#b66dff" />
-            <ActivityRow icon={Icon.Gift("#b66dff")} title="Dividends" value="$19.3M" pct="22.1%" velocity="0.85x" color="#b66dff" />
-            <ActivityRow icon={Icon.Percent("#b66dff")} title="Interest" value="$15.8M" pct="18.1%" velocity="1.02x" color="#b66dff" />
-            <ActivityRow icon={Icon.Coins("#b66dff")} title="Fees" value="$8.6M" pct="9.9%" velocity="0.78x" color="#b66dff" />
-            <ActivityRow icon={Icon.Ellipsis("#b66dff")} title="Other (Ops)" value="$14.7M" pct="16.9%" velocity="0.91x" color="#b66dff" />
+            <ActivityRow icon={Icon.Scale("#b66dff")} title="Rebalancing" value="$28.7M" pct="32.9%" velocity="1.33x" color="#b66dff" onSelect={onSelect} nodeId="rebalancing" />
+            <ActivityRow icon={Icon.Gift("#b66dff")} title="Dividends" value="$19.3M" pct="22.1%" velocity="0.85x" color="#b66dff" onSelect={onSelect} nodeId="dividends" />
+            <ActivityRow icon={Icon.Percent("#b66dff")} title="Interest" value="$15.8M" pct="18.1%" velocity="1.02x" color="#b66dff" onSelect={onSelect} nodeId="interest" />
+            <ActivityRow icon={Icon.Coins("#b66dff")} title="Fees" value="$8.6M" pct="9.9%" velocity="0.78x" color="#b66dff" onSelect={onSelect} nodeId="fees" />
+            <ActivityRow icon={Icon.Ellipsis("#b66dff")} title="Other (Ops)" value="$14.7M" pct="16.9%" velocity="0.91x" color="#b66dff" onSelect={onSelect} nodeId="other" />
           </div>
         </div>
 
         {/* OUTCOMES container with donut + labels merged */}
-        <div style={{ position: "absolute", left: 910, top: 138, width: 175, padding: "8px 10px 10px", borderRadius: 12, border: "1px solid rgba(255,176,68,0.42)", background: "rgba(30,22,10,0.62)", boxShadow: "0 0 24px rgba(255,176,68,0.12)", textAlign: "center", pointerEvents: "auto" }}>
+        <div onClick={() => onSelect("invested")} style={{ position: "absolute", left: 910, top: 138, width: 175, padding: "8px 10px 10px", borderRadius: 12, border: "1px solid rgba(255,176,68,0.42)", background: "rgba(30,22,10,0.62)", boxShadow: "0 0 24px rgba(255,176,68,0.12)", textAlign: "center", pointerEvents: "auto", cursor: "pointer" }}>
           <div style={{ fontSize: 11, color: "#ffb044", fontWeight: 900, letterSpacing: 1.2, marginBottom: 6 }}>OUTCOMES</div>
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
             <Donut segments={[{ color: "#5ea2ff", value: 76.8 }, { color: "#ffb044", value: 18.9 }, { color: "#ff5c66", value: 4.3 }]} centerLabel="$67.2M" centerSub="Invested" size={104} inner={64} />
@@ -762,7 +774,7 @@ function CenterFlow() {
           <div style={{ fontSize: 9, color: "#7890ad", textAlign: "left", marginTop: 2 }}>Scenario: $69.8M (+3.9%)</div>
         </div>
 
-        <div style={{ position: "absolute", left: 910, top: 420, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,176,68,0.28)", background: "rgba(30,22,10,0.6)", pointerEvents: "auto" }}>
+        <div onClick={() => onSelect("cash")} style={{ position: "absolute", left: 910, top: 420, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,176,68,0.28)", background: "rgba(30,22,10,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(255,176,68,0.18)", color: "#ffb044", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.Refresh("#ffb044")}</div>
             <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Cash Returned</div>
@@ -772,7 +784,7 @@ function CenterFlow() {
           <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Scenario: $18.1M (+9.7%)</div>
         </div>
 
-        <div style={{ position: "absolute", left: 910, top: 508, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,90,120,0.28)", background: "rgba(30,10,14,0.6)", pointerEvents: "auto" }}>
+        <div onClick={() => onSelect("outflows")} style={{ position: "absolute", left: 910, top: 508, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,90,120,0.28)", background: "rgba(30,10,14,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(255,90,120,0.18)", color: "#ff5c66", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.ArrowDown("#ff5c66")}</div>
             <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Net Outflows</div>
@@ -783,7 +795,7 @@ function CenterFlow() {
         </div>
 
         {/* RESULTS column (tightened spacing) */}
-        <div style={{ position: "absolute", left: 1145, top: 138, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.42)", background: "rgba(10,28,28,0.64)", boxShadow: "0 0 24px rgba(77,225,210,0.12)", pointerEvents: "auto" }}>
+        <div onClick={() => onSelect("endingNav")} style={{ position: "absolute", left: 1145, top: 138, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.42)", background: "rgba(10,28,28,0.64)", boxShadow: "0 0 24px rgba(77,225,210,0.12)", pointerEvents: "auto", cursor: "pointer" }}>
           <div style={{ fontSize: 11, color: "#4de1d2", fontWeight: 900, letterSpacing: 1.2, textAlign: "center", marginBottom: 6 }}>RESULTS</div>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.TrendUp("#4de1d2")}</div>
@@ -795,7 +807,7 @@ function CenterFlow() {
           <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: $69.8M (+7.1%)</div>
         </div>
 
-        <div style={{ position: "absolute", left: 1145, top: 300, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto" }}>
+        <div onClick={() => onSelect("totalReturn")} style={{ position: "absolute", left: 1145, top: 300, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.TrendUp("#4de1d2")}</div>
             <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Total Return</div>
@@ -806,7 +818,7 @@ function CenterFlow() {
           <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: $10.8M (+12.5%)</div>
         </div>
 
-        <div style={{ position: "absolute", left: 1145, top: 430, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto" }}>
+        <div onClick={() => onSelect("distributions")} style={{ position: "absolute", left: 1145, top: 430, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
             <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.DollarSign("#4de1d2")}</div>
             <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Distributions</div>
@@ -841,6 +853,134 @@ function CenterFlow() {
         <div style={{ position: "absolute", right: 6, top: 292, fontSize: 10, color: "#ff5c66", fontWeight: 800, background: "rgba(32,8,12,0.85)", padding: "2px 5px", borderRadius: 4, border: "1px solid rgba(255,90,120,0.3)", display: "flex", alignItems: "center", gap: 4 }}>{Icon.AlertTriangle("#ff5c66")}</div>
       </div>
     </div>
+  );
+}
+
+// --- Node Drawer ---------------------------------------------------------
+
+function NodeDrawer({ nodeId, onClose, onNavigate }: { nodeId: string; onClose: () => void; onNavigate: (id: string) => void }) {
+  const node = odysseyDemo.nodes.find((n) => n.id === nodeId);
+  if (!node) return null;
+  const feeders = odysseyDemo.flows.filter((f) => f.to === nodeId);
+  const downstream = odysseyDemo.flows.filter((f) => f.from === nodeId);
+  const feederTotal = feeders.reduce((s, f) => s + f.value, 0);
+  const downstreamTotal = downstream.reduce((s, f) => s + f.value, 0);
+  const scenarioTotal = feeders.reduce((s, f) => s + (f.scenarioValue ?? f.value), 0);
+  const scenarioDownstream = downstream.reduce((s, f) => s + (f.scenarioValue ?? f.value), 0);
+  const labelOf = (id: string) => odysseyDemo.nodes.find((n) => n.id === id)?.label ?? id;
+  const colorOf = (id: string) => odysseyDemo.nodes.find((n) => n.id === id)?.color ?? "#9fb2ca";
+  const stageOf = (id: string) => odysseyDemo.nodes.find((n) => n.id === id)?.stage ?? "";
+  return (
+    <>
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,8,16,0.55)", backdropFilter: "blur(3px)", zIndex: 100 }} />
+      <div style={{ position: "fixed", top: 0, right: 0, bottom: 0, width: 440, background: "#060c18", borderLeft: `2px solid ${rgba(node.color, 0.4)}`, boxShadow: "-20px 0 60px rgba(0,0,0,0.6)", zIndex: 101, display: "flex", flexDirection: "column", overflowY: "auto" }}>
+        <div style={{ padding: "20px 22px", borderBottom: "1px solid rgba(255,255,255,0.06)", background: `linear-gradient(180deg, ${rgba(node.color, 0.14)}, transparent)` }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <Dot color={node.color} size={10} />
+            <div style={{ fontSize: 10, letterSpacing: 1, color: "#7890ad", textTransform: "uppercase", fontWeight: 800, flex: 1 }}>{node.stage} · {node.id}</div>
+            <button onClick={onClose} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#9fb2ca", cursor: "pointer", fontSize: 14, width: 28, height: 28, borderRadius: 4 }}>×</button>
+          </div>
+          <div style={{ fontSize: 22, fontWeight: 900, color: "#eef6ff", marginTop: 8, letterSpacing: -0.4 }}>{node.label}</div>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 6 }}>
+            <div style={{ fontSize: 28, fontWeight: 900, color: node.color, letterSpacing: -0.6 }}>${node.value.toFixed(1)}M</div>
+            {node.pctLabel && <div style={{ fontSize: 13, fontWeight: 800, color: "#9fb2ca" }}>{node.pctLabel}</div>}
+            {typeof node.deltaPct === "number" && (
+              <div style={{ marginLeft: "auto", fontSize: 12, fontWeight: 800, color: node.deltaPct > 0 ? "#84e27a" : "#ff5c66" }}>
+                Scenario {node.deltaPct > 0 ? "+" : ""}{node.deltaPct.toFixed(1)}%
+              </div>
+            )}
+          </div>
+          {node.meta && <div style={{ fontSize: 11, color: "#7890ad", marginTop: 4 }}>{node.meta}</div>}
+        </div>
+
+        {feeders.length > 0 && (
+          <div style={{ padding: "16px 22px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.2, color: "#7890ad", textTransform: "uppercase", fontWeight: 800 }}>↓ Feeder flows ({feeders.length})</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#eef6ff" }}>${feederTotal.toFixed(1)}M</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {feeders.sort((a, b) => b.value - a.value).map((f) => {
+                const pct = (f.value / feederTotal) * 100;
+                const scen = f.scenarioValue ?? f.value;
+                const delta = scen - f.value;
+                return (
+                  <button key={f.id} onClick={() => onNavigate(f.from)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, border: `1px solid ${rgba(f.color, 0.25)}`, background: `linear-gradient(90deg, ${rgba(f.color, 0.08)}, rgba(7,15,28,0.4))`, cursor: "pointer", textAlign: "left" }}>
+                    <Dot color={f.color} size={8} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#eef6ff" }}>{labelOf(f.from)}</div>
+                      <div style={{ fontSize: 9, color: "#7890ad" }}>{stageOf(f.from)} · conf {f.confidence?.toFixed(2) ?? "—"} · vel {f.velocity?.toFixed(2) ?? "—"}x{f.residual ? " · residual" : ""}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#eef6ff" }}>${f.value.toFixed(1)}M</div>
+                      <div style={{ fontSize: 9, color: f.color, fontWeight: 700 }}>{pct.toFixed(1)}% {delta !== 0 && <span style={{ color: delta > 0 ? "#84e27a" : "#ff5c66", marginLeft: 4 }}>{delta > 0 ? "+" : ""}{delta.toFixed(1)}</span>}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {Math.abs(feederTotal - node.value) > 0.1 && (
+              <div style={{ marginTop: 6, fontSize: 10, color: "#7890ad", fontStyle: "italic" }}>Sum differs from node value by ${(node.value - feederTotal).toFixed(1)}M (residual / reconciliation)</div>
+            )}
+          </div>
+        )}
+
+        {downstream.length > 0 && (
+          <div style={{ padding: "16px 22px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.2, color: "#7890ad", textTransform: "uppercase", fontWeight: 800 }}>↑ Downstream flows ({downstream.length})</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#eef6ff" }}>${downstreamTotal.toFixed(1)}M</div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {downstream.sort((a, b) => b.value - a.value).map((f) => {
+                const pct = (f.value / downstreamTotal) * 100;
+                const scen = f.scenarioValue ?? f.value;
+                const delta = scen - f.value;
+                return (
+                  <button key={f.id} onClick={() => onNavigate(f.to)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 6, border: `1px solid ${rgba(f.color, 0.25)}`, background: `linear-gradient(90deg, rgba(7,15,28,0.4), ${rgba(f.color, 0.08)})`, cursor: "pointer", textAlign: "left" }}>
+                    <Dot color={f.color} size={8} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#eef6ff" }}>{labelOf(f.to)}</div>
+                      <div style={{ fontSize: 9, color: "#7890ad" }}>{stageOf(f.to)} · conf {f.confidence?.toFixed(2) ?? "—"} · vel {f.velocity?.toFixed(2) ?? "—"}x{f.residual ? " · residual" : ""}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 13, fontWeight: 800, color: "#eef6ff" }}>${f.value.toFixed(1)}M</div>
+                      <div style={{ fontSize: 9, color: f.color, fontWeight: 700 }}>{pct.toFixed(1)}% {delta !== 0 && <span style={{ color: delta > 0 ? "#84e27a" : "#ff5c66", marginLeft: 4 }}>{delta > 0 ? "+" : ""}{delta.toFixed(1)}</span>}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {(feeders.length > 0 || downstream.length > 0) && (
+          <div style={{ padding: "16px 22px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.2, color: "#7890ad", textTransform: "uppercase", fontWeight: 800, marginBottom: 8 }}>Scenario comparison</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+              {feeders.length > 0 && (
+                <div style={{ padding: 10, borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: 9, color: "#7890ad" }}>Feeders scenario</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: "#eef6ff" }}>${scenarioTotal.toFixed(1)}M</div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: scenarioTotal >= feederTotal ? "#84e27a" : "#ff5c66" }}>{scenarioTotal >= feederTotal ? "+" : ""}{(scenarioTotal - feederTotal).toFixed(1)}M</div>
+                </div>
+              )}
+              {downstream.length > 0 && (
+                <div style={{ padding: 10, borderRadius: 6, background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize: 9, color: "#7890ad" }}>Downstream scenario</div>
+                  <div style={{ fontSize: 16, fontWeight: 900, color: "#eef6ff" }}>${scenarioDownstream.toFixed(1)}M</div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: scenarioDownstream >= downstreamTotal ? "#84e27a" : "#ff5c66" }}>{scenarioDownstream >= downstreamTotal ? "+" : ""}{(scenarioDownstream - downstreamTotal).toFixed(1)}M</div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div style={{ padding: "16px 22px" }}>
+          <div style={{ fontSize: 9, color: "#7890ad" }}>Click a flow above to navigate to that node. Drag-to-rearrange and annotations coming in a later workstream.</div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -1154,13 +1294,13 @@ function TopBar({ tab, onTab, onCinematic }: { tab: string; onTab: (t: string) =
 
 // --- Tab Views -----------------------------------------------------------
 
-function FlowMonitorView() {
+function FlowMonitorView({ onSelect }: { onSelect: (id: string) => void }) {
   return (
     <>
       <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "245px 1fr 290px", gap: 8 }}>
         <LeftSidebar />
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <CenterFlow />
+          <CenterFlow onSelect={onSelect} />
           <Timeline />
         </div>
         <RightSidebar />
@@ -1458,6 +1598,7 @@ export default function OdysseyV17() {
   const initial = readUrlState();
   const [view, setView] = useState<string>(initial.view);
   const [tab, setTab] = useState<string>(initial.tab);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
   useEffect(() => { writeUrlState(view, tab); }, [view, tab]);
 
@@ -1468,7 +1609,7 @@ export default function OdysseyV17() {
       <div style={{ margin: "0 auto" }}>
         <TopBar tab={tab} onTab={setTab} onCinematic={() => setView("cinematic")} />
         <SubBar />
-        {tab === "Flow Monitor" && <FlowMonitorView />}
+        {tab === "Flow Monitor" && <FlowMonitorView onSelect={setSelectedNode} />}
         {tab === "Scenario Studio" && <ScenarioStudioView />}
         {tab === "Path Explorer" && <PathExplorerView />}
         {tab === "Constraint Inspector" && <ConstraintInspectorView />}
@@ -1480,6 +1621,7 @@ export default function OdysseyV17() {
           <span>Percentages may not sum to 100% due to rounding</span>
         </div>
       </div>
+      {selectedNode && <NodeDrawer nodeId={selectedNode} onClose={() => setSelectedNode(null)} onNavigate={setSelectedNode} />}
     </div>
   );
 }
