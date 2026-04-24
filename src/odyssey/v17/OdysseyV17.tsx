@@ -275,6 +275,11 @@ const Icon = {
   Calendar: (c = "currentColor") => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   BarChart: (c = "currentColor") => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>,
   Check: (c = "currentColor") => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  Leaf: (c = "currentColor") => <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2 22s10-8 10-20c8 0 10 8 10 12-4 0-10 2-10 8"/><path d="M12 14c-3 2-6 6-6 8"/></svg>,
+  Globe: (c = "currentColor") => <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>,
+  Shield: (c = "currentColor") => <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="13 8 9 13 13 13 11 18"/></svg>,
+  Building: (c = "currentColor") => <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="2" width="16" height="20" rx="2"/><path d="M9 22v-4h6v4"/><path d="M8 6h.01"/><path d="M16 6h.01"/><path d="M12 6h.01"/><path d="M8 10h.01"/><path d="M12 10h.01"/><path d="M16 10h.01"/><path d="M8 14h.01"/><path d="M12 14h.01"/><path d="M16 14h.01"/></svg>,
+  TrendUpBig: (c = "currentColor") => <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>,
   Swap: (c = "currentColor") => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10l-4 4 4 4"/><path d="M3 14h18"/><path d="M17 20l4-4-4-4"/><path d="M21 16H3" transform="rotate(180 12 16)"/></svg>,
   Flask: (c = "currentColor") => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 2v6L3 20a2 2 0 0 0 1.8 2.8h14.4A2 2 0 0 0 21 20l-6-12V2"/><line x1="7" y1="2" x2="17" y2="2"/></svg>,
   Compass: (c = "currentColor") => <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke={c} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>,
@@ -579,37 +584,48 @@ function StageHeader({ icon, n, title, sub, color, x }: { icon: React.ReactNode;
   );
 }
 
+const FUND_ICON: Record<string, (c?: string) => React.ReactElement> = {
+  growth: Icon.TrendUpBig,
+  value: Icon.Leaf,
+  intl: Icon.Globe,
+  bond: Icon.Shield,
+  real: Icon.Building,
+};
+
 function FundCard({ flow, x, y, active, dimmed, onHover, onSelect }: { flow: FlowFamily; x: number; y: number; active: boolean; dimmed: boolean; onHover: (id: string | null) => void; onSelect: (demoId: string) => void }) {
-  const delta = scenarioDeltaPct(flow.value, flow.scenario);
-  const deltaColor = delta.startsWith("-") ? "#ff5c66" : delta === "+0.0%" || delta === "0.0%" ? "#7890ad" : "#84e27a";
+  const FundIcon = FUND_ICON[flow.id] ?? Icon.TrendUpBig;
+  const glow = active ? 38 : 22;
+  const glowAlpha = active ? 0.75 : 0.55;
   return (
     <div
       onMouseEnter={() => onHover(flow.id)}
       onMouseLeave={() => onHover(null)}
       onClick={() => onSelect(toDemoId(flow.id))}
       style={{
-        position: "absolute", left: x, top: y, width: 172,
-        padding: "8px 10px", borderRadius: 8,
-        border: `1px solid ${rgba(flow.color, active ? 0.7 : dimmed ? 0.18 : 0.45)}`,
-        background: `linear-gradient(180deg, rgba(10,18,32,${active ? 0.88 : 0.74}), rgba(5,12,22,${active ? 0.78 : 0.62}))`,
-        boxShadow: `0 0 ${active ? 26 : 14}px ${rgba(flow.color, active ? 0.2 : 0.08)}, inset 0 0 20px ${rgba(flow.color, active ? 0.12 : 0.06)}`,
+        position: "absolute", left: x, top: y, width: 210,
+        padding: "14px 16px", borderRadius: 16,
+        border: `1.5px solid ${rgba(flow.color, active ? 0.95 : 0.75)}`,
+        background: "linear-gradient(180deg, rgba(6,10,18,0.95), rgba(2,6,12,0.98))",
+        boxShadow: `0 0 0 1px ${rgba(flow.color, 0.25)}, 0 0 ${glow}px ${rgba(flow.color, glowAlpha)}, inset 0 0 26px ${rgba(flow.color, active ? 0.18 : 0.12)}`,
         pointerEvents: "auto",
-        opacity: dimmed ? 0.55 : 1,
+        opacity: dimmed ? 0.5 : 1,
         transition: "all 180ms ease",
         cursor: "pointer",
       }}
     >
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-        <div style={{ fontSize: 11, fontWeight: 800, color: "#eef6ff" }}>{flow.label}</div>
-        <div style={{ fontSize: 10, color: flow.color, fontWeight: 800 }}>{flow.pct}</div>
+      {/* Left-edge connection tab */}
+      <div style={{ position: "absolute", left: -5, top: "50%", transform: "translateY(-50%)", width: 10, height: 30, background: flow.color, borderRadius: 3, boxShadow: `0 0 14px ${rgba(flow.color, 0.9)}` }} />
+
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: flow.color, filter: `drop-shadow(0 0 6px ${rgba(flow.color, 0.6)})` }}>
+          {FundIcon(flow.color)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, color: "#eaf2ff", fontWeight: 600, letterSpacing: -0.1 }}>{flow.label}</div>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#ffffff", letterSpacing: -1, marginTop: 1, lineHeight: 1.05, textShadow: `0 0 20px ${rgba(flow.color, 0.4)}` }}>${flow.value.toFixed(1)}M</div>
+        </div>
       </div>
-      <div style={{ fontSize: 18, fontWeight: 900, color: "white", marginTop: 1, letterSpacing: -0.4 }}>${flow.value.toFixed(1)}M</div>
-      <div style={{ fontSize: 9, color: "#8ba2c0", marginTop: 2 }}>Utilization: {flow.utilization}%</div>
-      <div style={{ marginTop: 2 }}><Gauge value={flow.utilization} color={flow.color} /></div>
-      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9 }}>
-        <span style={{ color: "#7890ad" }}>Scenario: ${flow.scenario.toFixed(1)}M</span>
-        <span style={{ color: deltaColor, fontWeight: 800 }}>({delta})</span>
-      </div>
+      <div style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", fontWeight: 600, marginTop: 6, marginLeft: 48 }}>{flow.pct}</div>
     </div>
   );
 }
@@ -673,11 +689,11 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
   }, [mode, quality]);
 
   const cards = useMemo(() => [
-    { flow: families[0], x: 335, y: 145 },
-    { flow: families[1], x: 335, y: 235 },
-    { flow: families[2], x: 335, y: 325 },
-    { flow: families[3], x: 335, y: 420 },
-    { flow: families[4], x: 335, y: 510 },
+    { flow: families[0], x: 315, y: 120 },
+    { flow: families[1], x: 315, y: 225 },
+    { flow: families[2], x: 315, y: 330 },
+    { flow: families[3], x: 315, y: 435 },
+    { flow: families[4], x: 315, y: 540 },
   ], []);
 
   const [selectedR, setSelectedR] = useState<number | null>(null);
