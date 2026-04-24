@@ -79,22 +79,24 @@ float grain(vec2 p) {
 
 void main() {
   float d = abs(vSide);
-  // Near-flat body with a wide halo that gently dims at the edges, plus an
-  // ultra-thin white centerline highlight. Solid saturated color fill.
-  float halo = exp(-d * d * 1.5);
-  float body = 1.0 - smoothstep(0.55, 1.0, d);
-  float core = exp(-d * d * 180.0);
+  // Tight body with defined edge, thin halo bleed just beyond the edge,
+  // hairline white centerline. Matches the reference's sharper outlines.
+  float halo = exp(-d * d * 2.4);
+  float body = 1.0 - smoothstep(0.72, 0.98, d);
+  // Soft rim brightening right at the body edge to give a subtle outline
+  float rim = smoothstep(0.55, 0.85, d) * (1.0 - smoothstep(0.85, 0.98, d));
+  float core = exp(-d * d * 220.0);
 
   float lenFade = smoothstep(0.0, 0.22, vT) * (1.0 - smoothstep(0.96, 1.0, vT));
-  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.25;
+  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.22;
 
   float g = grain(vWorld + vec2(uTime * 35.0, 0.0));
-  float grainMix = mix(0.85, 1.08, g);
+  float grainMix = mix(0.86, 1.1, g);
 
-  // Solid colored body + soft halo + thin white highlight.
-  vec3 rgb = vColor * (body * 0.9 + halo * 0.28);
-  rgb += vec3(1.0) * core * 0.5;
-  float alpha = (body * 0.72 + halo * 0.26 + core * 0.4) * lenFade * cardBoost * vIntensity * grainMix;
+  // Solid colored body + faint halo bleed + edge rim + thin white core.
+  vec3 rgb = vColor * (body * 0.95 + halo * 0.2 + rim * 0.55);
+  rgb += vec3(1.0) * core * 0.55;
+  float alpha = (body * 0.78 + halo * 0.18 + rim * 0.35 + core * 0.4) * lenFade * cardBoost * vIntensity * grainMix;
 
   gl_FragColor = vec4(rgb * alpha, alpha);
 }
@@ -307,25 +309,32 @@ export class FlowRenderer {
       }
 
       // Grain particles — scattered within the beam's area, drifting along t.
+      // Color is biased toward white for high-contrast sparkle inside the
+      // colored beam body (reference shows visible light-dust texture).
       for (let k = 0; k < grainParticles; k += 1) {
-        // Seeded t drift — particles travel from source to card.
         const baseT = (k / grainParticles + (k * 0.37 + fam.value * 0.013) + phase * 0.04) % 1;
         const t = baseT < 0 ? baseT + 1 : baseT;
         const tVisible = 0.05 + t * 0.9;
         const idx = Math.min(n - 1, Math.max(0, Math.floor(tVisible * (n - 1))));
         const bp = pts[idx];
         const norm = normalAt(pts, idx);
-        // Random offset across beam width — biased toward the center a bit.
-        const spread = (((k * 7.31 + fam.value * 2.17) % 1) * 2 - 1);
-        const biased = Math.sign(spread) * Math.pow(Math.abs(spread), 0.9);
-        const offset = biased * beamHalfWidth * 0.85;
+        // Random offset across beam width — mostly inside the body (|spread| < 0.9).
+        const spread = (((k * 7.31 + fam.value * 2.17) % 1) * 2 - 1) * 0.85;
+        const biased = Math.sign(spread) * Math.pow(Math.abs(spread), 0.85);
+        const offset = biased * beamHalfWidth;
         const sx = bp.x + norm.x * offset;
         const sy = bp.y + norm.y * offset;
         const sizeRand = ((k * 13.7 + fam.value * 5.3) % 10);
-        const size = 1.3 + sizeRand / 6; // mostly tiny specks, occasional bigger dot
+        // Bigger, more visible dust particles — 2-5px range.
+        const size = 2.0 + sizeRand / 3;
         const alphaRand = ((k * 3.1 + fam.value * 1.7) % 10);
-        const alpha = 0.35 + alphaRand / 18;
-        sparkVerts.push(sx, sy, size, rgb[0], rgb[1], rgb[2], alpha);
+        const alpha = 0.7 + alphaRand / 14;
+        // Bias particle color toward white so they pop against the colored body.
+        const whiteBias = 0.45;
+        const pr = rgb[0] * (1 - whiteBias) + whiteBias;
+        const pg = rgb[1] * (1 - whiteBias) + whiteBias;
+        const pb = rgb[2] * (1 - whiteBias) + whiteBias;
+        sparkVerts.push(sx, sy, size, pr, pg, pb, alpha);
       }
 
       const beamEnd = beamVerts.length / BEAM_STRIDE_F;
