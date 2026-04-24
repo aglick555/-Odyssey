@@ -476,8 +476,12 @@ function LeftSidebar() {
 
 // --- Right Sidebar -------------------------------------------------------
 
-function RightSidebar() {
+function RightSidebar({ overrides, setOverrides }: { overrides: Record<string, number>; setOverrides: React.Dispatch<React.SetStateAction<Record<string, number>>> }) {
   const [pathView, setPathView] = useState("% of NAV");
+  const bump = (id: string, d: number) => setOverrides((o) => ({ ...o, [id]: clamp((o[id] ?? 0) + d, -25, 25) }));
+  const totalActual = families.reduce((s, f) => s + f.value, 0);
+  const totalScenario = families.reduce((s, f) => s + effectiveScenario(f, overrides[f.id]), 0);
+  const impactDelta = totalScenario - totalActual;
   const paths = [
     { label: "From Growth Fund A", color: "#5ea2ff", pct: "30.2%", val: "$27.8M", delta: "+1.9M", up: true },
     { label: "From Value Fund B", color: "#84e27a", pct: "25.1%", val: "$23.1M", delta: "-0.8M", up: false },
@@ -542,26 +546,39 @@ function RightSidebar() {
         </div>
       </Panel>
 
-      <Panel title="Scenario Simulator" right={<button style={{ background: "transparent", border: "none", color: "#5ea2ff", fontSize: 10, fontWeight: 700, cursor: "pointer" }}>Edit</button>}>
-        <div style={{ fontSize: 10, color: "#7890ad", marginBottom: 6 }}>Proposed Changes</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 11 }}>
-          {[
-            { label: "Growth Fund A", change: "+10%", impact: "$2.4M", color: "#84e27a" },
-            { label: "Value Fund B", change: "-15%", impact: "$3.2M", color: "#ff5c66" },
-            { label: "Real Estate E", change: "+15%", impact: "$1.4M", color: "#84e27a" },
-            { label: "Fee Assumption", change: "", impact: "-10bps", color: "#5fe7ff" },
-          ].map((s) => (
-            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ color: "#9fb2ca", flex: 1 }}>{s.label}</div>
-              <div style={{ color: s.color, fontWeight: 800, minWidth: 44, textAlign: "right" }}>{s.change || "—"}</div>
-              <div style={{ color: "#eef6ff", fontWeight: 800, minWidth: 54, textAlign: "right" }}>{s.impact}</div>
-            </div>
-          ))}
+      <Panel title="Scenario Simulator" right={<button onClick={() => setOverrides({})} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#9fb2ca", fontSize: 10, padding: "2px 8px", borderRadius: 4, cursor: "pointer" }}>Reset</button>}>
+        <div style={{ fontSize: 10, color: "#7890ad", marginBottom: 6 }}>Adjust allocations (±25%)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+          {families.map((f) => {
+            const pct = overrides[f.id] ?? 0;
+            const scen = effectiveScenario(f, overrides[f.id]);
+            const dAbs = scen - f.value;
+            return (
+              <div key={f.id} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11 }}>
+                <Dot color={f.color} size={7} />
+                <div style={{ color: "#9fb2ca", flex: 1, fontSize: 10 }}>{f.label}</div>
+                <button onClick={() => bump(f.id, -5)} style={{ width: 18, height: 18, borderRadius: 3, border: "1px solid rgba(255,90,120,0.35)", background: "rgba(255,90,120,0.06)", color: "#ff5c66", fontWeight: 900, fontSize: 9, cursor: "pointer", padding: 0 }}>-</button>
+                <div style={{ minWidth: 38, textAlign: "center", fontSize: 10, fontWeight: 800, color: pct > 0 ? "#84e27a" : pct < 0 ? "#ff5c66" : "#7890ad" }}>{pct > 0 ? "+" : ""}{pct}%</div>
+                <button onClick={() => bump(f.id, 5)} style={{ width: 18, height: 18, borderRadius: 3, border: "1px solid rgba(132,226,122,0.35)", background: "rgba(132,226,122,0.06)", color: "#84e27a", fontWeight: 900, fontSize: 9, cursor: "pointer", padding: 0 }}>+</button>
+                <div style={{ color: dAbs > 0 ? "#84e27a" : dAbs < 0 ? "#ff5c66" : "#7890ad", fontWeight: 700, minWidth: 48, textAlign: "right", fontSize: 10 }}>
+                  {dAbs > 0 ? "+" : ""}{dAbs.toFixed(1)}M
+                </div>
+              </div>
+            );
+          })}
         </div>
-        <button style={{ marginTop: 10, width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(94,162,255,0.4)", background: "rgba(94,162,255,0.14)", color: "#5ea2ff", fontWeight: 800, fontSize: 11, cursor: "pointer" }}>Run Scenario</button>
-        <button style={{ marginTop: 6, width: "100%", padding: "7px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "transparent", color: "#9fb2ca", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
-          {Icon.Swap("#9fb2ca")} Compare Scenarios (3)
-        </button>
+        <div style={{ marginTop: 10, padding: "8px 10px", borderRadius: 6, background: "rgba(94,162,255,0.06)", border: "1px solid rgba(94,162,255,0.18)" }}>
+          <div style={{ fontSize: 9, color: "#7890ad", letterSpacing: 0.5, textTransform: "uppercase" }}>Net Impact</div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginTop: 2 }}>
+            <div style={{ fontSize: 18, fontWeight: 900, color: impactDelta > 0 ? "#84e27a" : impactDelta < 0 ? "#ff5c66" : "#eef6ff" }}>
+              {impactDelta > 0 ? "+" : ""}${impactDelta.toFixed(1)}M
+            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: impactDelta > 0 ? "#84e27a" : impactDelta < 0 ? "#ff5c66" : "#7890ad" }}>
+              {impactDelta > 0 ? "+" : ""}{((impactDelta / totalActual) * 100).toFixed(1)}%
+            </div>
+          </div>
+          <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Base ${totalActual.toFixed(1)}M → ${totalScenario.toFixed(1)}M</div>
+        </div>
       </Panel>
     </div>
   );
@@ -592,10 +609,18 @@ const FUND_ICON: Record<string, (c?: string) => React.ReactElement> = {
   real: Icon.Building,
 };
 
-function FundCard({ flow, x, y, active, dimmed, onHover, onSelect }: { flow: FlowFamily; x: number; y: number; active: boolean; dimmed: boolean; onHover: (id: string | null) => void; onSelect: (demoId: string) => void }) {
+function effectiveScenario(flow: FlowFamily, override: number | undefined): number {
+  if (override !== undefined) return flow.value * (1 + override / 100);
+  return flow.scenario;
+}
+
+function FundCard({ flow, x, y, active, dimmed, onHover, onSelect, override }: { flow: FlowFamily; x: number; y: number; active: boolean; dimmed: boolean; onHover: (id: string | null) => void; onSelect: (demoId: string) => void; override?: number }) {
   const FundIcon = FUND_ICON[flow.id] ?? Icon.TrendUpBig;
   const glow = active ? 38 : 22;
   const glowAlpha = active ? 0.75 : 0.55;
+  const scen = effectiveScenario(flow, override);
+  const deltaPct = ((scen - flow.value) / flow.value) * 100;
+  const hasScenario = override !== undefined && Math.abs(deltaPct) > 0.05;
   return (
     <div
       onMouseEnter={() => onHover(flow.id)}
@@ -615,6 +640,13 @@ function FundCard({ flow, x, y, active, dimmed, onHover, onSelect }: { flow: Flo
     >
       {/* Left-edge connection tab */}
       <div style={{ position: "absolute", left: -5, top: "50%", transform: "translateY(-50%)", width: 10, height: 30, background: flow.color, borderRadius: 3, boxShadow: `0 0 14px ${rgba(flow.color, 0.9)}` }} />
+
+      {/* Scenario override badge */}
+      {hasScenario && (
+        <div style={{ position: "absolute", top: 8, right: 8, padding: "2px 6px", borderRadius: 999, fontSize: 10, fontWeight: 900, border: `1px solid ${rgba(deltaPct > 0 ? "#84e27a" : "#ff5c66", 0.5)}`, background: deltaPct > 0 ? "rgba(132,226,122,0.16)" : "rgba(255,90,120,0.16)", color: deltaPct > 0 ? "#84e27a" : "#ff5c66" }}>
+          {deltaPct > 0 ? "+" : ""}{deltaPct.toFixed(0)}%
+        </div>
+      )}
 
       <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
         <div style={{ width: 36, height: 36, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", color: flow.color, filter: `drop-shadow(0 0 6px ${rgba(flow.color, 0.6)})` }}>
@@ -654,7 +686,7 @@ function RCircle({ marker, active, onClick }: { marker: RMarker; active: boolean
   );
 }
 
-function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
+function CenterFlow({ onSelect, overrides }: { onSelect: (id: string) => void; overrides: Record<string, number> }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const glCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -781,7 +813,7 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
         </div>
 
         {cards.map(({ flow, x, y }) => (
-          <FundCard key={flow.id} flow={flow} x={x} y={y} active={highlightId === flow.id} dimmed={!!highlightId && highlightId !== flow.id} onHover={setHighlightId} onSelect={onSelect} />
+          <FundCard key={flow.id} flow={flow} x={x} y={y} active={highlightId === flow.id} dimmed={!!highlightId && highlightId !== flow.id} onHover={setHighlightId} onSelect={onSelect} override={overrides[flow.id]} />
         ))}
 
         {/* Window labels */}
@@ -1123,14 +1155,22 @@ function Timeline() {
 
 // --- Summary Row ---------------------------------------------------------
 
-function SummaryRow() {
+function SummaryRow({ overrides }: { overrides: Record<string, number> }) {
+  const totalActual = families.reduce((s, f) => s + f.value, 0);
+  const totalScenario = families.reduce((s, f) => s + effectiveScenario(f, overrides[f.id]), 0);
+  const impactDelta = totalScenario - totalActual;
+  const scenarioActive = Object.values(overrides).some((v) => v !== 0 && v !== undefined);
+  const baselinePerf = "+$4.7M";
+  const baselinePerfPct = "+5.4% (IRR)";
+  const scenarioPerf = (impactDelta >= 0 ? "+" : "") + "$" + impactDelta.toFixed(1) + "M";
+  const scenarioPerfPct = (impactDelta >= 0 ? "+" : "") + ((impactDelta / totalActual) * 100).toFixed(1) + "% (scenario)";
   const items = [
     { icon: Icon.Users, label: "Total Contributions", value: "$87.4M", sub: "100%", color: "#84e27a" },
     { icon: Icon.Refresh, label: "Total Redemptions", value: "$29.3M", sub: "33.6%", color: "#ffb044" },
     { icon: Icon.ArrowUpRight, label: "Net Cash Flow", value: "$58.1M", sub: "66.4%", color: "#5ea2ff" },
     { icon: Icon.TrendUp, label: "Realized P&L", value: "$9.6M", sub: "11.6% of Invested", color: "#b66dff" },
     { icon: Icon.Calendar, label: "Time Period", value: "YTD 2025", sub: "Jan 1 – May 31, 2025", color: "#5fe7ff" },
-    { icon: Icon.BarChart, label: "Net Performance", value: "+$4.7M", sub: "+5.4% (IRR)", color: "#4de1d2" },
+    { icon: Icon.BarChart, label: "Net Performance", value: scenarioActive ? scenarioPerf : baselinePerf, sub: scenarioActive ? scenarioPerfPct : baselinePerfPct, color: scenarioActive ? (impactDelta >= 0 ? "#84e27a" : "#ff5c66") : "#4de1d2" },
     { icon: Icon.Check, label: "System Reconciliation", value: "Balanced", sub: "In = Out + Residual", color: "#84e27a" },
   ];
   return (
@@ -1341,25 +1381,24 @@ function TopBar({ tab, onTab, onCinematic }: { tab: string; onTab: (t: string) =
 
 // --- Tab Views -----------------------------------------------------------
 
-function FlowMonitorView({ onSelect }: { onSelect: (id: string) => void }) {
+function FlowMonitorView({ onSelect, overrides, setOverrides }: { onSelect: (id: string) => void; overrides: Record<string, number>; setOverrides: React.Dispatch<React.SetStateAction<Record<string, number>>> }) {
   return (
     <>
       <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "245px 1fr 290px", gap: 8 }}>
         <LeftSidebar />
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <CenterFlow onSelect={onSelect} />
+          <CenterFlow onSelect={onSelect} overrides={overrides} />
           <Timeline />
         </div>
-        <RightSidebar />
+        <RightSidebar overrides={overrides} setOverrides={setOverrides} />
       </div>
-      <SummaryRow />
+      <SummaryRow overrides={overrides} />
       <BottomPanels />
     </>
   );
 }
 
-function ScenarioStudioView() {
-  const [overrides, setOverrides] = useState<Record<string, number>>({});
+function ScenarioStudioView({ overrides, setOverrides }: { overrides: Record<string, number>; setOverrides: React.Dispatch<React.SetStateAction<Record<string, number>>> }) {
   const bump = (id: string, d: number) => setOverrides((o) => ({ ...o, [id]: clamp((o[id] ?? 0) + d, -25, 25) }));
   const applied = families.map((f) => {
     const pct = overrides[f.id] ?? 0;
@@ -1646,6 +1685,7 @@ export default function OdysseyV17() {
   const [view, setView] = useState<string>(initial.view);
   const [tab, setTab] = useState<string>(initial.tab);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [scenarioOverrides, setScenarioOverrides] = useState<Record<string, number>>({});
 
   useEffect(() => { writeUrlState(view, tab); }, [view, tab]);
 
@@ -1656,8 +1696,8 @@ export default function OdysseyV17() {
       <div style={{ margin: "0 auto" }}>
         <TopBar tab={tab} onTab={setTab} onCinematic={() => setView("cinematic")} />
         <SubBar />
-        {tab === "Flow Monitor" && <FlowMonitorView onSelect={setSelectedNode} />}
-        {tab === "Scenario Studio" && <ScenarioStudioView />}
+        {tab === "Flow Monitor" && <FlowMonitorView onSelect={setSelectedNode} overrides={scenarioOverrides} setOverrides={setScenarioOverrides} />}
+        {tab === "Scenario Studio" && <ScenarioStudioView overrides={scenarioOverrides} setOverrides={setScenarioOverrides} />}
         {tab === "Path Explorer" && <PathExplorerView />}
         {tab === "Constraint Inspector" && <ConstraintInspectorView />}
         {tab === "Attribution Engine" && <AttributionEngineView />}
