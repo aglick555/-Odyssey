@@ -704,7 +704,7 @@ function CenterFlow({ onSelect }: { onSelect: (id: string) => void }) {
       if (renderer) {
         renderer.buildGeometry(
           familyPaths,
-          { beamHalfWidth: 55, grainParticles: 180 },
+          { beamHalfWidth: 55 },
           phase,
         );
         renderer.render(highlightRef.current);

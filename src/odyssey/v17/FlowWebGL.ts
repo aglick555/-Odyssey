@@ -1,7 +1,8 @@
-// WebGL flow renderer — one wide glowing beam per family with grain particles.
-// Matches the parallel-beam reference aesthetic: each fund has its own solid
-// colored band with soft outer halo, bright body, and ultra-thin white core;
-// dust-like sparkles drift inside each beam to give it a fiber-like grain.
+// WebGL flow renderer — one wide solid beam per family, alpha-over composite.
+// No additive blending, no sparkle pass. Each family's path becomes a single
+// triangle strip; the fragment shader composites halo -> body -> rim -> core
+// in straight alpha and outputs a premultiplied color for proper over-blend
+// against the 2D canvas below (stars, background, vignette).
 
 export type Point2 = { x: number; y: number };
 export type FamilyPath = {
@@ -18,14 +19,6 @@ function hexToRgb(hex: string): RGB {
   const n = Number.parseInt(c, 16);
   return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
-
-// ---- Beam program --------------------------------------------------------
-//
-// Each family is one triangle strip. aSide ranges across the beam's width
-// from -1 (top edge) through 0 (center) to +1 (bottom edge). The fragment
-// shader composes halo + body + white-hot core as exponential falloffs of
-// that normalized cross-beam distance, then modulates by a length fade and
-// a low-frequency grain texture.
 
 const BEAM_VERT = `
 precision mediump float;
@@ -51,7 +44,7 @@ void main() {
   vSide = aSide;
   vT = aT;
   vColor = aColor;
-  vIntensity = uDimHighlight * (1.0 + uIsHighlight * 0.35);
+  vIntensity = uDimHighlight * (1.0 + uIsHighlight * 0.3);
   vWorld = aPos;
 }
 `;
@@ -66,89 +59,63 @@ varying vec2 vWorld;
 
 uniform float uTime;
 
-// Cheap pseudo-noise for grain striations along the beam.
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
   return fract((p3.x + p3.y) * p3.z);
 }
-float grain(vec2 p) {
-  // Horizontal striation: vary mostly along y, repeat tightly
-  return 0.75 + 0.5 * hash12(vec2(floor(p.x * 0.25), floor(p.y * 0.9)));
+
+// Composite a layer (srcRgb, srcA) "over" an accumulated (rgb, a).
+// Straight-alpha Porter-Duff over.
+vec4 over(vec4 acc, vec3 srcRgb, float srcA) {
+  float outA = srcA + acc.a * (1.0 - srcA);
+  vec3 outRgb = srcRgb * srcA + acc.rgb * acc.a * (1.0 - srcA);
+  if (outA > 0.0001) outRgb /= outA;
+  return vec4(outRgb, outA);
 }
 
 void main() {
   float d = abs(vSide);
-  // Tight body with defined edge, thin halo bleed just beyond the edge,
-  // hairline white centerline. Matches the reference's sharper outlines.
-  float halo = exp(-d * d * 2.4);
+  // Soft halo just outside the body; flat body; narrow rim highlight at
+  // the body edge; hairline white centerline. Tuned so each layer is an
+  // independent alpha contribution rather than additive brightness.
+  float halo = exp(-d * d * 2.0) * (1.0 - smoothstep(0.75, 1.0, d));
   float body = 1.0 - smoothstep(0.72, 0.98, d);
-  // Soft rim brightening right at the body edge to give a subtle outline
   float rim = smoothstep(0.55, 0.85, d) * (1.0 - smoothstep(0.85, 0.98, d));
-  float core = exp(-d * d * 220.0);
+  float core = exp(-d * d * 240.0);
 
   float lenFade = smoothstep(0.0, 0.22, vT) * (1.0 - smoothstep(0.96, 1.0, vT));
-  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.22;
+  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.2;
 
-  float g = grain(vWorld + vec2(uTime * 35.0, 0.0));
-  float grainMix = mix(0.86, 1.1, g);
+  // Subtle noise modulation along the beam — gives dust/grain feel without
+  // a separate particle pass.
+  float g = 0.7 + 0.4 * hash12(floor(vWorld * 0.35) + floor(vec2(uTime * 0.7, 0.0)));
+  float grainMix = mix(0.88, 1.08, g);
 
-  // Solid colored body + faint halo bleed + edge rim + thin white core.
-  vec3 rgb = vColor * (body * 0.95 + halo * 0.2 + rim * 0.55);
-  rgb += vec3(1.0) * core * 0.55;
-  float alpha = (body * 0.78 + halo * 0.18 + rim * 0.35 + core * 0.4) * lenFade * cardBoost * vIntensity * grainMix;
+  // Layer alphas (straight, 0..~1).
+  float aHalo = clamp(halo * 0.45, 0.0, 1.0);
+  float aBody = clamp(body * 0.92 * grainMix, 0.0, 1.0);
+  float aRim = clamp(rim * 0.7, 0.0, 1.0);
+  float aCore = clamp(core * 0.65, 0.0, 1.0);
 
-  gl_FragColor = vec4(rgb * alpha, alpha);
+  // Per-layer colors.
+  vec3 cHalo = vColor * 0.85;
+  vec3 cBody = vColor;
+  vec3 cRim = mix(vColor, vec3(1.0), 0.25);
+  vec3 cCore = vec3(1.0);
+
+  // Composite halo -> body -> rim -> core using over.
+  vec4 acc = vec4(cHalo, aHalo);
+  acc = over(acc, cBody, aBody);
+  acc = over(acc, cRim, aRim);
+  acc = over(acc, cCore, aCore);
+
+  // Modulate overall opacity by length + intensity.
+  float finalA = acc.a * lenFade * cardBoost * vIntensity;
+  // Premultiplied alpha output for gl.ONE, gl.ONE_MINUS_SRC_ALPHA blend.
+  gl_FragColor = vec4(acc.rgb * finalA, finalA);
 }
 `;
-
-// ---- Sparkle program -----------------------------------------------------
-// Dust particles scattered inside each beam. Much smaller and more numerous
-// than the prior "ember" sparkles — the goal here is a fine grain texture,
-// not prominent dots. Each particle drifts slowly along the beam length.
-
-const SPARK_VERT = `
-precision mediump float;
-attribute vec2 aPos;
-attribute float aSize;
-attribute vec3 aColor;
-attribute float aAlpha;
-
-uniform vec2 uResolution;
-uniform float uPixelScale;
-uniform float uDimHighlight;
-
-varying vec3 vColor;
-varying float vAlpha;
-
-void main() {
-  vec2 clip = (aPos / uResolution) * 2.0 - 1.0;
-  clip.y = -clip.y;
-  gl_Position = vec4(clip, 0.0, 1.0);
-  gl_PointSize = aSize * uPixelScale;
-  vColor = aColor;
-  vAlpha = aAlpha * uDimHighlight;
-}
-`;
-
-const SPARK_FRAG = `
-precision mediump float;
-varying vec3 vColor;
-varying float vAlpha;
-
-void main() {
-  vec2 uv = gl_PointCoord - 0.5;
-  float d = length(uv);
-  if (d > 0.5) discard;
-  float core = exp(-d * d * 48.0);
-  float halo = exp(-d * d * 10.0);
-  float a = (halo * 0.5 + core * 1.8) * vAlpha;
-  vec3 rgb = mix(vColor * 1.3, vec3(1.0), core * 0.7);
-  gl_FragColor = vec4(rgb * a, a);
-}
-`;
-
-// --------------------------------------------------------------------------
 
 function compile(gl: WebGLRenderingContext, type: number, src: string): WebGLShader {
   const sh = gl.createShader(type)!;
@@ -184,36 +151,25 @@ function normalAt(pts: Point2[], i: number) {
   return { x: -dy / len, y: dx / len };
 }
 
-// Beam vertex stride: pos(2) + side(1) + t(1) + color(3) = 7 floats
-const BEAM_STRIDE_F = 7;
+const BEAM_STRIDE_F = 7; // pos(2) + side(1) + t(1) + color(3)
 const BEAM_STRIDE_B = BEAM_STRIDE_F * 4;
-// Sparkle vertex stride: pos(2) + size(1) + color(3) + alpha(1) = 7 floats
-const SPARK_STRIDE_F = 7;
-const SPARK_STRIDE_B = SPARK_STRIDE_F * 4;
 
 export type FlowBeamConfig = {
-  beamHalfWidth: number;     // half-height of the extruded beam in logical px
-  grainParticles: number;    // sparkle/dust particles per family
+  beamHalfWidth: number;
 };
 
 type BeamGroup = {
   familyId: string;
   beamOffset: number;
   beamCount: number;
-  sparkOffset: number;
-  sparkCount: number;
 };
 
 export class FlowRenderer {
   private gl: WebGLRenderingContext;
   private beamProg: WebGLProgram;
-  private sparkProg: WebGLProgram;
   private beamVbo: WebGLBuffer;
-  private sparkVbo: WebGLBuffer;
   private beamAttribs: Record<string, number>;
-  private sparkAttribs: Record<string, number>;
   private beamUniforms: Record<string, WebGLUniformLocation | null>;
-  private sparkUniforms: Record<string, WebGLUniformLocation | null>;
   private groups: BeamGroup[] = [];
   private width: number;
   private height: number;
@@ -223,7 +179,7 @@ export class FlowRenderer {
   private startTime: number;
 
   constructor(canvas: HTMLCanvasElement, width: number, height: number, dpr = 1) {
-    const gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: false, antialias: true });
+    const gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: true });
     if (!gl) throw new Error("WebGL not supported");
     this.gl = gl;
     this.canvas = canvas;
@@ -250,22 +206,6 @@ export class FlowRenderer {
       uIsHighlight: gl.getUniformLocation(this.beamProg, "uIsHighlight"),
       uTime: gl.getUniformLocation(this.beamProg, "uTime"),
     };
-
-    const pvs = compile(gl, gl.VERTEX_SHADER, SPARK_VERT);
-    const pfs = compile(gl, gl.FRAGMENT_SHADER, SPARK_FRAG);
-    this.sparkProg = link(gl, pvs, pfs);
-    this.sparkVbo = gl.createBuffer()!;
-    this.sparkAttribs = {
-      aPos: gl.getAttribLocation(this.sparkProg, "aPos"),
-      aSize: gl.getAttribLocation(this.sparkProg, "aSize"),
-      aColor: gl.getAttribLocation(this.sparkProg, "aColor"),
-      aAlpha: gl.getAttribLocation(this.sparkProg, "aAlpha"),
-    };
-    this.sparkUniforms = {
-      uResolution: gl.getUniformLocation(this.sparkProg, "uResolution"),
-      uPixelScale: gl.getUniformLocation(this.sparkProg, "uPixelScale"),
-      uDimHighlight: gl.getUniformLocation(this.sparkProg, "uDimHighlight"),
-    };
   }
 
   resize(width: number, height: number, dpr = this.dpr) {
@@ -276,10 +216,9 @@ export class FlowRenderer {
     this.canvas.height = Math.round(height * dpr);
   }
 
-  buildGeometry(families: FamilyPath[], cfg: FlowBeamConfig, phase: number) {
-    const { beamHalfWidth, grainParticles } = cfg;
+  buildGeometry(families: FamilyPath[], cfg: FlowBeamConfig, _phase: number) {
+    const { beamHalfWidth } = cfg;
     const beamVerts: number[] = [];
-    const sparkVerts: number[] = [];
     const groups: BeamGroup[] = [];
 
     for (const fam of families) {
@@ -287,10 +226,7 @@ export class FlowRenderer {
       const pts = fam.points;
       const n = pts.length;
       const beamStart = beamVerts.length / BEAM_STRIDE_F;
-      const sparkStart = sparkVerts.length / SPARK_STRIDE_F;
 
-      // Build the beam triangle strip. For each sample along the path emit two
-      // vertices: (-beamHalfWidth, +beamHalfWidth) perpendicular to the path.
       for (let i = 0; i < n; i += 1) {
         const t = i / (n - 1);
         const p = pts[i];
@@ -300,59 +236,23 @@ export class FlowRenderer {
         const ly = p.y + norm.y * -hw;
         const rx = p.x + norm.x * hw;
         const ry = p.y + norm.y * hw;
-        // Degenerate start
         if (i === 0) beamVerts.push(lx, ly, -1, t, rgb[0], rgb[1], rgb[2]);
         beamVerts.push(lx, ly, -1, t, rgb[0], rgb[1], rgb[2]);
         beamVerts.push(rx, ry, +1, t, rgb[0], rgb[1], rgb[2]);
-        // Degenerate end
         if (i === n - 1) beamVerts.push(rx, ry, +1, t, rgb[0], rgb[1], rgb[2]);
       }
 
-      // Grain particles — scattered within the beam's area, drifting along t.
-      // Color is biased toward white for high-contrast sparkle inside the
-      // colored beam body (reference shows visible light-dust texture).
-      for (let k = 0; k < grainParticles; k += 1) {
-        const baseT = (k / grainParticles + (k * 0.37 + fam.value * 0.013) + phase * 0.04) % 1;
-        const t = baseT < 0 ? baseT + 1 : baseT;
-        const tVisible = 0.05 + t * 0.9;
-        const idx = Math.min(n - 1, Math.max(0, Math.floor(tVisible * (n - 1))));
-        const bp = pts[idx];
-        const norm = normalAt(pts, idx);
-        // Random offset across beam width — mostly inside the body (|spread| < 0.9).
-        const spread = (((k * 7.31 + fam.value * 2.17) % 1) * 2 - 1) * 0.85;
-        const biased = Math.sign(spread) * Math.pow(Math.abs(spread), 0.85);
-        const offset = biased * beamHalfWidth;
-        const sx = bp.x + norm.x * offset;
-        const sy = bp.y + norm.y * offset;
-        const sizeRand = ((k * 13.7 + fam.value * 5.3) % 10);
-        // Bigger, more visible dust particles — 2-5px range.
-        const size = 2.0 + sizeRand / 3;
-        const alphaRand = ((k * 3.1 + fam.value * 1.7) % 10);
-        const alpha = 0.7 + alphaRand / 14;
-        // Bias particle color toward white so they pop against the colored body.
-        const whiteBias = 0.45;
-        const pr = rgb[0] * (1 - whiteBias) + whiteBias;
-        const pg = rgb[1] * (1 - whiteBias) + whiteBias;
-        const pb = rgb[2] * (1 - whiteBias) + whiteBias;
-        sparkVerts.push(sx, sy, size, pr, pg, pb, alpha);
-      }
-
       const beamEnd = beamVerts.length / BEAM_STRIDE_F;
-      const sparkEnd = sparkVerts.length / SPARK_STRIDE_F;
       groups.push({
         familyId: fam.id,
         beamOffset: beamStart,
         beamCount: beamEnd - beamStart,
-        sparkOffset: sparkStart,
-        sparkCount: sparkEnd - sparkStart,
       });
     }
 
     const gl = this.gl;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.beamVbo);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(beamVerts), gl.DYNAMIC_DRAW);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.sparkVbo);
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(sparkVerts), gl.DYNAMIC_DRAW);
     this.groups = groups;
   }
 
@@ -363,10 +263,10 @@ export class FlowRenderer {
     gl.clearColor(0, 0, 0, 0);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.ONE, gl.ONE);
+    // Premultiplied alpha-over: src is already multiplied by alpha in the shader.
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     const now = (performance.now() - this.startTime) / 1000;
 
-    // -- Beam pass --
     gl.useProgram(this.beamProg);
     gl.uniform2f(this.beamUniforms.uResolution!, this.width, this.height);
     gl.uniform1f(this.beamUniforms.uTime!, now);
@@ -389,34 +289,6 @@ export class FlowRenderer {
       gl.uniform1f(this.beamUniforms.uIsHighlight!, isHl);
       gl.drawArrays(gl.TRIANGLE_STRIP, g.beamOffset, g.beamCount);
     }
-
-    if (ba.aPos >= 0) gl.disableVertexAttribArray(ba.aPos);
-    if (ba.aSide >= 0) gl.disableVertexAttribArray(ba.aSide);
-    if (ba.aT >= 0) gl.disableVertexAttribArray(ba.aT);
-    if (ba.aColor >= 0) gl.disableVertexAttribArray(ba.aColor);
-
-    // -- Grain sparkle pass --
-    gl.useProgram(this.sparkProg);
-    gl.uniform2f(this.sparkUniforms.uResolution!, this.width, this.height);
-    gl.uniform1f(this.sparkUniforms.uPixelScale!, this.dpr);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.sparkVbo);
-    const pa = this.sparkAttribs;
-    const enableP = (loc: number, size: number, off: number) => {
-      if (loc < 0) return;
-      gl.enableVertexAttribArray(loc);
-      gl.vertexAttribPointer(loc, size, gl.FLOAT, false, SPARK_STRIDE_B, off);
-    };
-    enableP(pa.aPos, 2, 0);
-    enableP(pa.aSize, 1, 8);
-    enableP(pa.aColor, 3, 12);
-    enableP(pa.aAlpha, 1, 24);
-
-    for (const g of this.groups) {
-      if (g.sparkCount === 0) continue;
-      const dim = highlightId ? (highlightId === g.familyId ? 1 : 0.25) : 1;
-      gl.uniform1f(this.sparkUniforms.uDimHighlight!, dim);
-      gl.drawArrays(gl.POINTS, g.sparkOffset, g.sparkCount);
-    }
   }
 
   dispose() {
@@ -424,8 +296,6 @@ export class FlowRenderer {
     this.disposed = true;
     const gl = this.gl;
     gl.deleteBuffer(this.beamVbo);
-    gl.deleteBuffer(this.sparkVbo);
     gl.deleteProgram(this.beamProg);
-    gl.deleteProgram(this.sparkProg);
   }
 }
