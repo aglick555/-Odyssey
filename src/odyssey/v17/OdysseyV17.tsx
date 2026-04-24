@@ -618,8 +618,12 @@ function ActivityRow({ icon, title, value, pct, velocity, color }: { icon: React
   );
 }
 
-function RCircle({ x, y }: { x: number; y: number }) {
-  return <div style={{ position: "absolute", left: x - 9, top: y - 9, width: 18, height: 18, borderRadius: "50%", background: "rgba(255,90,120,0.22)", border: "1.5px solid #ff5c78", color: "#ff5c78", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, pointerEvents: "none", boxShadow: "0 0 8px rgba(255,90,120,0.5)" }}>R</div>;
+type RMarker = { x: number; y: number; family: FlowFamily; stage: string; date: string; amount: string };
+
+function RCircle({ marker, active, onClick }: { marker: RMarker; active: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} title={`${marker.family.label} · ${marker.stage}`} style={{ position: "absolute", left: marker.x - 9, top: marker.y - 9, width: 18, height: 18, borderRadius: "50%", background: active ? "rgba(255,90,120,0.55)" : "rgba(255,90,120,0.22)", border: "1.5px solid #ff5c78", color: active ? "#fff" : "#ff5c78", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, boxShadow: active ? "0 0 16px rgba(255,90,120,0.8)" : "0 0 8px rgba(255,90,120,0.5)", cursor: "pointer", pointerEvents: "auto", padding: 0, transition: "all 120ms ease" }}>R</button>
+  );
 }
 
 function CenterFlow() {
@@ -664,11 +668,22 @@ function CenterFlow() {
     { flow: families[4], x: 335, y: 510 },
   ], []);
 
-  const rMarkers = useMemo(() => {
-    const out: Point[] = [];
+  const [selectedR, setSelectedR] = useState<number | null>(null);
+
+  const rMarkers = useMemo<RMarker[]>(() => {
+    const stages = [
+      { t: 0.14, stage: "Source inflow", date: "Jan 12, 2025" },
+      { t: 0.33, stage: "Allocation rebalance", date: "Feb 20, 2025" },
+      { t: 0.68, stage: "Activity rebalance", date: "Apr 8, 2025" },
+      { t: 0.88, stage: "Outcome reconciliation", date: "May 15, 2025" },
+    ];
+    const out: RMarker[] = [];
     families.forEach((f) => {
-      const p = buildFamilyPath(f);
-      [0.14, 0.33, 0.68, 0.88].forEach((t) => out.push(pointAt(p, t)));
+      const path = buildFamilyPath(f);
+      stages.forEach(({ t, stage, date }) => {
+        const p = pointAt(path, t);
+        out.push({ x: p.x, y: p.y, family: f, stage, date, amount: `$${(f.value * (t < 0.5 ? 0.25 : t < 0.75 ? 0.15 : 0.1)).toFixed(1)}M` });
+      });
     });
     return out;
   }, []);
@@ -803,7 +818,23 @@ function CenterFlow() {
         </div>
 
         {/* R markers — placed on actual flow paths */}
-        {rMarkers.map((p, i) => <RCircle key={i} x={p.x} y={p.y} />)}
+        {rMarkers.map((m, i) => <RCircle key={i} marker={m} active={selectedR === i} onClick={() => setSelectedR((s) => (s === i ? null : i))} />)}
+        {selectedR !== null && (() => {
+          const m = rMarkers[selectedR];
+          const left = clamp(m.x - 110, 10, WIDTH - 240);
+          const top = m.y + 18;
+          return (
+            <div style={{ position: "absolute", left, top, width: 220, padding: "8px 10px", borderRadius: 6, border: `1px solid ${rgba(m.family.color, 0.5)}`, background: "rgba(10,18,32,0.95)", boxShadow: `0 4px 20px rgba(0,0,0,0.6), 0 0 20px ${rgba(m.family.color, 0.15)}`, zIndex: 20, pointerEvents: "auto" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3 }}>
+                <Dot color={m.family.color} size={8} />
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#eef6ff", flex: 1 }}>{m.family.label}</div>
+                <button onClick={() => setSelectedR(null)} style={{ background: "transparent", border: "none", color: "#7890ad", cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
+              </div>
+              <div style={{ fontSize: 10, color: m.family.color, fontWeight: 700 }}>{m.stage}</div>
+              <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>{m.date} · {m.amount}</div>
+            </div>
+          );
+        })()}
 
         {/* Scenario delta flags */}
         <div style={{ position: "absolute", right: 6, top: 146, fontSize: 10, color: "#84e27a", fontWeight: 800, background: "rgba(8,32,20,0.85)", padding: "2px 6px", borderRadius: 4, border: "1px solid rgba(132,226,122,0.3)" }}>+1.2M</div>
@@ -815,32 +846,49 @@ function CenterFlow() {
 
 // --- Timeline ------------------------------------------------------------
 
+type TimelineCategory = "events" | "constraints" | "states" | "capacity";
+type TimelineEvent = {
+  x: number;
+  label: string;
+  color: string;
+  category: TimelineCategory;
+  title: string;
+  date: string;
+  amount?: string;
+  detail: string;
+};
+
+const TIMELINE_EVENTS: TimelineEvent[] = [
+  { x: 40, label: "E", color: "#9fb2ca", category: "events", title: "Baseline Established", date: "Jan 1, 2025", detail: "Opening NAV captured at $87.4M" },
+  { x: 220, label: "R", color: "#ff5c66", category: "constraints", title: "Rebalancing Capacity Hit", date: "Feb 20, 2025", amount: "$18.7M", detail: "Capacity constraint capped 21.4% of flow for 14 days" },
+  { x: 265, label: "B", color: "#5ea2ff", category: "events", title: "Bond Allocation Trade", date: "Mar 2, 2025", amount: "$4.3M", detail: "Bond fund reweighted +7% vs baseline" },
+  { x: 325, label: "D", color: "#ffb044", category: "states", title: "Distribution Paid", date: "Mar 15, 2025", amount: "$2.1M", detail: "Quarterly distribution to LPs" },
+  { x: 395, label: "T", color: "#b66dff", category: "states", title: "Transfer Block Cleared", date: "Apr 5, 2025", detail: "Operational lockup released" },
+  { x: 455, label: "D", color: "#ffb044", category: "states", title: "Distribution Paid", date: "Apr 15, 2025", amount: "$1.9M", detail: "Intra-quarter distribution" },
+  { x: 515, label: "F", color: "#5ea2ff", category: "events", title: "Fee Accrual", date: "Apr 22, 2025", amount: "$0.6M", detail: "Management fees booked" },
+  { x: 595, label: "D", color: "#ffb044", category: "states", title: "Distribution Paid", date: "May 1, 2025", amount: "$2.1M", detail: "Distribution window open" },
+  { x: 670, label: "B", color: "#5ea2ff", category: "events", title: "Equity Trade", date: "May 10, 2025", amount: "$3.2M", detail: "Growth fund top-up" },
+  { x: 745, label: "P", color: "#84e27a", category: "capacity", title: "Peak Utilization", date: "May 14, 2025", detail: "Capacity hit 96% for 2 days" },
+  { x: 820, label: "D", color: "#ffb044", category: "states", title: "Distribution Paid", date: "May 22, 2025", amount: "$1.4M", detail: "Late-quarter distribution" },
+  { x: 915, label: "C", color: "#4de1d2", category: "capacity", title: "Capacity Restored", date: "May 28, 2025", detail: "Utilization normalized to 68%" },
+  { x: 995, label: "P", color: "#84e27a", category: "capacity", title: "Period Close", date: "May 31, 2025", detail: "YTD reconciliation complete" },
+];
+
 function Timeline() {
-  const events = [
-    { x: 40, label: "E", color: "#9fb2ca" },
-    { x: 220, label: "R", color: "#ff5c66" },
-    { x: 265, label: "B", color: "#5ea2ff" },
-    { x: 325, label: "D", color: "#ffb044" },
-    { x: 395, label: "T", color: "#b66dff" },
-    { x: 455, label: "D", color: "#ffb044" },
-    { x: 515, label: "F", color: "#5ea2ff" },
-    { x: 595, label: "D", color: "#ffb044" },
-    { x: 670, label: "B", color: "#5ea2ff" },
-    { x: 745, label: "P", color: "#84e27a" },
-    { x: 820, label: "D", color: "#ffb044" },
-    { x: 915, label: "C", color: "#4de1d2" },
-    { x: 995, label: "P", color: "#84e27a" },
-  ];
+  const [filters, setFilters] = useState<Record<TimelineCategory, boolean>>({ events: true, constraints: true, states: true, capacity: true });
+  const [selected, setSelected] = useState<TimelineEvent | null>(null);
+  const visible = TIMELINE_EVENTS.filter((e) => filters[e.category]);
+  const toggle = (k: TimelineCategory) => setFilters((f) => ({ ...f, [k]: !f[k] }));
   return (
     <Panel title="Timeline" right={<span style={{ fontSize: 9, color: "#7890ad" }}>(Capital Journey)</span>} style={{ marginTop: 8 }}>
       <div style={{ position: "relative", height: 132 }}>
         <div style={{ position: "absolute", left: 0, top: 0, width: 110, fontSize: 10, display: "flex", flexDirection: "column", gap: 5 }}>
           <div style={{ color: "#7890ad", fontWeight: 700, letterSpacing: 0.6 }}>SHOW</div>
-          {[["Events", "#5ea2ff"], ["Constraints", "#ff5c66"], ["States", "#b66dff"], ["Capacity", "#84e27a"]].map(([l, c]) => (
-            <div key={l} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-              <div style={{ width: 10, height: 10, borderRadius: 2, background: rgba(c, 0.4), border: `1px solid ${c}` }} />
-              <div style={{ color: "#9fb2ca" }}>{l}</div>
-            </div>
+          {([["Events", "#5ea2ff", "events"], ["Constraints", "#ff5c66", "constraints"], ["States", "#b66dff", "states"], ["Capacity", "#84e27a", "capacity"]] as const).map(([l, c, k]) => (
+            <button key={l} onClick={() => toggle(k)} style={{ display: "flex", alignItems: "center", gap: 5, background: "transparent", border: "none", padding: 0, cursor: "pointer" }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: filters[k] ? rgba(c, 0.4) : "transparent", border: `1px solid ${filters[k] ? c : "rgba(255,255,255,0.15)"}` }} />
+              <div style={{ color: filters[k] ? "#eef6ff" : "#6a829f" }}>{l}</div>
+            </button>
           ))}
         </div>
         <div style={{ position: "absolute", left: 120, top: 0, right: 0 }}>
@@ -850,19 +898,30 @@ function Timeline() {
             ))}
           </div>
           <div style={{ position: "relative", height: 28, borderTop: "1px solid rgba(255,255,255,0.08)", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-            {events.map((e, i) => (
-              <div key={i} style={{ position: "absolute", left: e.x, top: 4, width: 20, height: 20, borderRadius: "50%", border: `1.5px solid ${e.color}`, background: rgba(e.color, 0.2), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: e.color }}>{e.label}</div>
+            {visible.map((e, i) => (
+              <button key={i} onClick={() => setSelected((s) => (s === e ? null : e))} title={`${e.title} · ${e.date}`} style={{ position: "absolute", left: e.x, top: 4, width: 20, height: 20, borderRadius: "50%", border: `1.5px solid ${e.color}`, background: selected === e ? rgba(e.color, 0.55) : rgba(e.color, 0.2), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900, color: selected === e ? "#fff" : e.color, cursor: "pointer", padding: 0, boxShadow: selected === e ? `0 0 10px ${rgba(e.color, 0.6)}` : "none", transition: "all 120ms ease" }}>{e.label}</button>
             ))}
+            {selected && (
+              <div style={{ position: "absolute", left: Math.min(selected.x - 60, 700), top: 32, width: 240, padding: "8px 10px", borderRadius: 6, border: `1px solid ${rgba(selected.color, 0.5)}`, background: "rgba(10,18,32,0.95)", boxShadow: `0 4px 20px rgba(0,0,0,0.6), 0 0 20px ${rgba(selected.color, 0.15)}`, zIndex: 10 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: "50%", background: rgba(selected.color, 0.3), color: selected.color, border: `1px solid ${selected.color}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 900 }}>{selected.label}</div>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: "#eef6ff", flex: 1 }}>{selected.title}</div>
+                  <button onClick={() => setSelected(null)} style={{ background: "transparent", border: "none", color: "#7890ad", cursor: "pointer", fontSize: 12, padding: 0 }}>×</button>
+                </div>
+                <div style={{ fontSize: 9, color: "#7890ad", marginBottom: 4 }}>{selected.date}{selected.amount ? ` · ${selected.amount}` : ""}</div>
+                <div style={{ fontSize: 10, color: "#9fb2ca", lineHeight: 1.4 }}>{selected.detail}</div>
+              </div>
+            )}
           </div>
           <div style={{ position: "relative", marginTop: 12 }}>
             <div style={{ fontSize: 9, color: "#7890ad", position: "absolute", left: 0, top: -12, fontWeight: 700, letterSpacing: 0.5 }}>SYSTEM STATE</div>
-            <div style={{ height: 14, borderRadius: 3, background: "linear-gradient(90deg, #84e27a 0%, #5ea2ff 20%, #ffb044 40%, #b66dff 60%, #ff5c66 80%, #84e27a 100%)", opacity: 0.82 }} />
+            <div style={{ height: 14, borderRadius: 3, background: "linear-gradient(90deg, #84e27a 0%, #5ea2ff 20%, #ffb044 40%, #b66dff 60%, #ff5c66 80%, #84e27a 100%)", opacity: filters.states ? 0.82 : 0.2, transition: "opacity 150ms" }} />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, marginTop: 4, color: "#7890ad" }}>
               <span>Normal</span><span>Rebalancing Window</span><span>High Utilization</span><span>Distribution Window</span><span>Market Volatility</span><span>Normal</span>
             </div>
           </div>
         </div>
-        <div style={{ position: "absolute", right: 0, top: 0, fontSize: 9, color: "#7890ad", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+        <div style={{ position: "absolute", right: 0, top: 0, fontSize: 9, color: "#7890ad", display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, opacity: filters.capacity ? 1 : 0.35, transition: "opacity 150ms" }}>
           <div style={{ fontWeight: 700, letterSpacing: 0.5 }}>CAPACITY HEATMAP (Avg)</div>
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span>0%</span>
