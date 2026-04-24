@@ -79,24 +79,22 @@ float grain(vec2 p) {
 
 void main() {
   float d = abs(vSide);
-  // Halo: wider, gentler falloff so the beam reads as a solid band with
-  // soft edges rather than a thin glow line.
-  float halo = exp(-d * d * 0.9);
-  float body = exp(-d * d * 2.8);
-  float core = exp(-d * d * 60.0);
+  // Near-flat body with a wide halo that gently dims at the edges, plus an
+  // ultra-thin white centerline highlight. Solid saturated color fill.
+  float halo = exp(-d * d * 1.5);
+  float body = 1.0 - smoothstep(0.55, 1.0, d);
+  float core = exp(-d * d * 180.0);
 
-  // Length gradient — long fade-in on the source side, tight cap on card side.
-  float lenFade = smoothstep(0.0, 0.28, vT) * (1.0 - smoothstep(0.95, 1.0, vT));
-  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.35;
+  float lenFade = smoothstep(0.0, 0.22, vT) * (1.0 - smoothstep(0.96, 1.0, vT));
+  float cardBoost = 1.0 + smoothstep(0.5, 0.95, vT) * 0.25;
 
-  // Grain striations traveling along the beam.
   float g = grain(vWorld + vec2(uTime * 35.0, 0.0));
-  float grainMix = mix(0.82, 1.08, g);
+  float grainMix = mix(0.85, 1.08, g);
 
-  // Solid colored body + bright white core.
-  vec3 rgb = vColor * (halo * 0.55 + body * 1.0) * 1.2;
-  rgb += vec3(1.0) * core * 1.2;
-  float alpha = (halo * 0.55 + body * 0.85 + core * 0.9) * lenFade * cardBoost * vIntensity * grainMix;
+  // Solid colored body + soft halo + thin white highlight.
+  vec3 rgb = vColor * (body * 0.9 + halo * 0.28);
+  rgb += vec3(1.0) * core * 0.5;
+  float alpha = (body * 0.72 + halo * 0.26 + core * 0.4) * lenFade * cardBoost * vIntensity * grainMix;
 
   gl_FragColor = vec4(rgb * alpha, alpha);
 }
