@@ -30,6 +30,39 @@ function fmtPct(value: number, digits = 1, signed = false): string {
 function flowsInto(id: string) { return odysseyDemo.flows.filter((f) => f.to === id); }
 function flowsOutOf(id: string) { return odysseyDemo.flows.filter((f) => f.from === id); }
 
+// Forward-propagate "share of starting capital" from a node through the
+// directed graph. Returns a map { nodeId: share }, where share is the
+// fraction of the starting node's capital that reached this downstream
+// node along all routed paths.
+const STAGE_ORDER: ReadonlyArray<string> = ["source", "allocation", "activity", "outcome", "result"];
+function traceAttributionFrom(startId: string): Record<string, number> {
+  const shares: Record<string, number> = { [startId]: 1 };
+  const startNode = getNode(startId);
+  const startIdx = startNode ? STAGE_ORDER.indexOf(startNode.stage) : 0;
+  for (let s = startIdx; s < STAGE_ORDER.length; s += 1) {
+    const stageNodes = odysseyDemo.nodes.filter((n) => n.stage === STAGE_ORDER[s]);
+    for (const node of stageNodes) {
+      const inShare = shares[node.id];
+      if (!inShare) continue;
+      const out = flowsOutOf(node.id);
+      const totalOut = out.reduce((sum, f) => sum + f.value, 0);
+      if (totalOut === 0) continue;
+      for (const f of out) {
+        shares[f.to] = (shares[f.to] ?? 0) + inShare * (f.value / totalOut);
+      }
+    }
+  }
+  return shares;
+}
+// Dollar contribution from sourceId to targetId, given dataset values.
+function attributionDollars(sourceId: string, targetId: string): number {
+  const shares = traceAttributionFrom(sourceId);
+  const src = getNode(sourceId);
+  if (!src) return 0;
+  return src.value * (shares[targetId] ?? 0);
+}
+function residualFlows() { return odysseyDemo.flows.filter((f) => f.residual === true); }
+
 type Mode = "actual" | "robust" | "delta";
 type Quality = "safe" | "balanced" | "cinematic";
 type Point = { x: number; y: number };
@@ -1620,54 +1653,122 @@ function ConstraintInspectorView() {
 }
 
 function AttributionEngineView() {
-  const [pivot, setPivot] = useState("source");
-  const bySource = families.map((f) => ({ color: f.color, value: f.value, label: f.label }));
-  const byActivity = [
-    { label: "Rebalancing", value: 28.7, color: "#b66dff" },
-    { label: "Dividends", value: 19.3, color: "#b66dff" },
-    { label: "Interest", value: 15.8, color: "#b66dff" },
-    { label: "Fees", value: 8.6, color: "#b66dff" },
-    { label: "Other (Ops)", value: 14.7, color: "#b66dff" },
-  ];
-  const byOutcome = [
-    { label: "Invested Value", value: 67.2, color: "#4de1d2" },
-    { label: "Cash Returned", value: 16.5, color: "#ffb044" },
-    { label: "Net Outflows", value: 3.7, color: "#ff5c66" },
-  ];
-  const pivotData = pivot === "activity" ? byActivity : pivot === "outcome" ? byOutcome : bySource;
-  const total = pivotData.reduce((s, d) => s + d.value, 0);
+  const allocationNodes = useMemo(() => odysseyDemo.nodes.filter((n) => n.stage === "allocation"), []);
+  const [sourceId, setSourceId] = useState<string>(allocationNodes[0]?.id ?? "growth");
+  const sourceNode = getNode(sourceId);
+  const shares = useMemo(() => traceAttributionFrom(sourceId), [sourceId]);
+  const sourceValue = sourceNode?.value ?? 0;
+
+  const stageRows = (stage: string) =>
+    odysseyDemo.nodes
+      .filter((n) => n.stage === stage)
+      .map((n) => {
+        const share = shares[n.id] ?? 0;
+        const dollars = sourceValue * share;
+        return { id: n.id, label: n.label, color: n.color, share, dollars };
+      })
+      .filter((r) => r.share > 0.0001)
+      .sort((a, b) => b.share - a.share);
+
+  const activityRows = stageRows("activity");
+  const outcomeRows = stageRows("outcome");
+  const resultRows = stageRows("result");
+
+  // Reverse-attribution: how much of each result came from THIS source.
+  const resultBackAttribution = resultRows.map((r) => {
+    const target = getNode(r.id);
+    const totalAtTarget = target?.value ?? 0;
+    return { ...r, pctOfTarget: totalAtTarget > 0 ? (r.dollars / totalAtTarget) * 100 : 0 };
+  });
+
+  const residuals = residualFlows();
+
+  const StageBlock = ({ title, rows, accent }: { title: string; rows: { id: string; label: string; color: string; share: number; dollars: number }[]; accent: string }) => (
+    <div style={{ flex: 1 }}>
+      <div style={{ fontSize: 10, color: accent, fontWeight: 800, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>{title}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        {rows.map((r) => (
+          <div key={r.id} style={{ padding: "6px 8px", borderRadius: 6, border: `1px solid ${rgba(r.color, 0.25)}`, background: `linear-gradient(90deg, ${rgba(r.color, 0.08)}, rgba(7,15,28,0.4))` }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+              <Dot color={r.color} size={7} />
+              <div style={{ color: "#eef6ff", flex: 1 }}>{r.label}</div>
+              <div style={{ color: r.color, fontWeight: 800 }}>{(r.share * 100).toFixed(1)}%</div>
+            </div>
+            <div style={{ marginTop: 2, display: "flex", justifyContent: "space-between", fontSize: 10, color: "#9fb2ca" }}>
+              <span>{fmtMoney(r.dollars, 2)}</span>
+              <div style={{ flex: 1, marginLeft: 8, height: 3, background: "rgba(255,255,255,0.06)", borderRadius: 2, overflow: "hidden", alignSelf: "center" }}>
+                <div style={{ width: `${r.share * 100}%`, height: "100%", background: r.color }} />
+              </div>
+            </div>
+          </div>
+        ))}
+        {rows.length === 0 && <div style={{ fontSize: 10, color: "#7890ad", padding: "6px 8px" }}>No flow reaches this stage.</div>}
+      </div>
+    </div>
+  );
+
   return (
-    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 380px", gap: 8 }}>
-      <Panel title="Attribution Engine" right={
-        <div style={{ display: "flex", gap: 4 }}>
-          {["source", "activity", "outcome"].map((p) => (
-            <button key={p} onClick={() => setPivot(p)} style={{ padding: "4px 10px", borderRadius: 4, border: "1px solid rgba(255,255,255,0.08)", background: pivot === p ? "rgba(94,162,255,0.18)" : "transparent", color: pivot === p ? "#5ea2ff" : "#9fb2ca", fontSize: 10, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>By {p}</button>
-          ))}
+    <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "240px 1fr 320px", gap: 8 }}>
+      <Panel title="Attribution Source" right={<span style={{ fontSize: 9, color: "#7890ad" }}>(allocation)</span>}>
+        <div style={{ fontSize: 10, color: "#9fb2ca", marginBottom: 8 }}>Pick a starting allocation to trace its capital path through the graph.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          {allocationNodes.map((n) => {
+            const active = sourceId === n.id;
+            return (
+              <button key={n.id} onClick={() => setSourceId(n.id)} style={{ padding: "8px 10px", borderRadius: 6, border: `1px solid ${active ? rgba(n.color, 0.55) : "rgba(255,255,255,0.08)"}`, background: active ? rgba(n.color, 0.12) : "transparent", color: active ? n.color : "#9fb2ca", fontSize: 12, fontWeight: 700, cursor: "pointer", textAlign: "left", display: "flex", alignItems: "center", gap: 8 }}>
+                <Dot color={n.color} size={9} />
+                <div style={{ flex: 1 }}>{n.label}</div>
+                <div style={{ color: "#7890ad", fontSize: 10, fontWeight: 600 }}>{fmtMoney(n.value)}</div>
+              </button>
+            );
+          })}
         </div>
+      </Panel>
+      <Panel title="Forward Attribution Trace" right={
+        <span style={{ fontSize: 10, color: "#7890ad" }}>{sourceNode?.label} · {fmtMoney(sourceValue)} traced through the graph</span>
       }>
-        <div style={{ display: "flex", alignItems: "center", gap: 24, padding: 20 }}>
-          <Donut segments={pivotData} centerLabel={`$${total.toFixed(1)}M`} centerSub={`By ${pivot}`} size={220} inner={130} />
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
-            {pivotData.map((d) => (
-              <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
-                <Dot color={d.color} size={10} />
-                <div style={{ color: "#eef6ff", flex: 1 }}>{d.label}</div>
-                <div style={{ color: "#eef6ff", fontWeight: 800, minWidth: 70, textAlign: "right" }}>${d.value.toFixed(1)}M</div>
-                <div style={{ color: "#7890ad", minWidth: 50, textAlign: "right" }}>{((d.value / total) * 100).toFixed(1)}%</div>
+        <div style={{ display: "flex", gap: 12, padding: "4px 0" }}>
+          <StageBlock title="Activity" rows={activityRows} accent="#b66dff" />
+          <div style={{ alignSelf: "stretch", width: 1, background: "rgba(255,255,255,0.06)", marginTop: 24 }} />
+          <StageBlock title="Outcome" rows={outcomeRows} accent="#ffb044" />
+          <div style={{ alignSelf: "stretch", width: 1, background: "rgba(255,255,255,0.06)", marginTop: 24 }} />
+          <StageBlock title="Result" rows={resultRows} accent="#4de1d2" />
+        </div>
+        <div style={{ marginTop: 12, padding: "8px 10px", borderRadius: 6, background: "rgba(94,162,255,0.06)", border: "1px solid rgba(94,162,255,0.15)" }}>
+          <div style={{ fontSize: 10, color: "#7890ad", letterSpacing: 0.5, textTransform: "uppercase" }}>Reverse: % of each result from this source</div>
+          <div style={{ marginTop: 4, display: "flex", flexDirection: "column", gap: 4 }}>
+            {resultBackAttribution.map((r) => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                <Dot color={r.color} size={7} />
+                <div style={{ color: "#eef6ff", flex: 1 }}>{r.label}</div>
+                <div style={{ color: r.color, fontWeight: 800, minWidth: 56, textAlign: "right" }}>{r.pctOfTarget.toFixed(1)}%</div>
+                <div style={{ color: "#9fb2ca", minWidth: 64, textAlign: "right" }}>{fmtMoney(r.dollars, 2)}</div>
               </div>
             ))}
           </div>
         </div>
       </Panel>
-      <Panel title="Flow Trace" right={<span style={{ fontSize: 9, color: "#7890ad" }}>Top contributors</span>}>
-        <div style={{ fontSize: 11, color: "#9fb2ca", marginBottom: 10 }}>Click a segment (left) to drill into upstream contributors.</div>
-        {pivotData.slice().sort((a, b) => b.value - a.value).map((d, i) => (
-          <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", marginBottom: 4, border: "1px solid rgba(255,255,255,0.06)", borderRadius: 6 }}>
-            <div style={{ width: 20, height: 20, borderRadius: "50%", background: rgba(d.color, 0.22), color: d.color, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 900 }}>{i + 1}</div>
-            <div style={{ flex: 1, fontSize: 11, color: "#eef6ff" }}>{d.label}</div>
-            <div style={{ color: d.color, fontSize: 11, fontWeight: 800 }}>${d.value.toFixed(1)}M</div>
-          </div>
-        ))}
+      <Panel title="Residual & Leakage" right={<span style={{ fontSize: 10, color: "#7890ad" }}>{residuals.length}</span>}>
+        <div style={{ fontSize: 10, color: "#9fb2ca", marginBottom: 8 }}>Flows tagged residual / dashed in the dataset — capital that doesn't follow the canonical path.</div>
+        {residuals.length === 0 && <div style={{ fontSize: 11, color: "#84e27a" }}>No residual flows in this dataset.</div>}
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {residuals.map((f) => {
+            const fromN = getNode(f.from);
+            const toN = getNode(f.to);
+            return (
+              <div key={f.id} style={{ padding: "8px 10px", borderRadius: 6, border: "1px dashed rgba(255,138,68,0.45)", background: "rgba(255,138,68,0.05)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11 }}>
+                  <span style={{ color: "#ff8a44", fontWeight: 800 }}>{fmtMoney(f.value)}</span>
+                  <span style={{ color: "#7890ad", fontSize: 10 }}>· conf {f.confidence?.toFixed(2) ?? "—"}</span>
+                </div>
+                <div style={{ marginTop: 2, fontSize: 10, color: "#eef6ff" }}>
+                  {fromN?.label ?? f.from} <span style={{ color: "#7890ad" }}>→</span> {toN?.label ?? f.to}
+                </div>
+                <div style={{ marginTop: 2, fontSize: 9, color: "#7890ad" }}>{(fromN?.stage ?? "")} → {(toN?.stage ?? "")}</div>
+              </div>
+            );
+          })}
+        </div>
       </Panel>
     </div>
   );
