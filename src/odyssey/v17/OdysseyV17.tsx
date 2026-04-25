@@ -13,6 +13,23 @@ const V17_TO_DEMO: Record<string, string> = {
 };
 function toDemoId(v17Id: string) { return V17_TO_DEMO[v17Id] ?? v17Id; }
 
+// ---- Dataset lookup helpers ----------------------------------------------
+// All hardcoded dollar/percentage values in the UI should resolve via these
+// helpers so a single edit to demoOdyssey.ts propagates through the whole
+// dashboard.
+
+function getNode(id: string) { return odysseyDemo.nodes.find((n) => n.id === id); }
+function getNodeValue(id: string, fallback = 0): number { return getNode(id)?.value ?? fallback; }
+function getNodePct(id: string, fallback = ""): string { return getNode(id)?.pctLabel ?? fallback; }
+function getNodeDelta(id: string): number | undefined { return getNode(id)?.deltaPct; }
+function fmtMoney(value: number, digits = 1): string { return `$${value.toFixed(digits)}M`; }
+function fmtPct(value: number, digits = 1, signed = false): string {
+  const sign = signed && value > 0 ? "+" : "";
+  return `${sign}${value.toFixed(digits)}%`;
+}
+function flowsInto(id: string) { return odysseyDemo.flows.filter((f) => f.to === id); }
+function flowsOutOf(id: string) { return odysseyDemo.flows.filter((f) => f.from === id); }
+
 type Mode = "actual" | "robust" | "delta";
 type Quality = "safe" | "balanced" | "cinematic";
 type Point = { x: number; y: number };
@@ -48,32 +65,28 @@ function scenarioDeltaAbs(value: number, scenario: number) {
 type AttributionRow = { label: string; value: number; color: string };
 
 function attributionRowsFor(tab: string): AttributionRow[] {
-  if (tab === "By Activity") return [
-    { label: "Rebalancing", value: 28.7, color: "#b66dff" },
-    { label: "Dividends", value: 19.3, color: "#b66dff" },
-    { label: "Interest", value: 15.8, color: "#b66dff" },
-    { label: "Fees", value: 8.6, color: "#b66dff" },
-    { label: "Other (Ops)", value: 14.7, color: "#b66dff" },
-  ];
-  if (tab === "By Outcome") return [
-    { label: "Invested Value", value: 67.2, color: "#4de1d2" },
-    { label: "Cash Returned", value: 16.5, color: "#ffb044" },
-    { label: "Net Outflows", value: 3.7, color: "#ff5c66" },
-  ];
-  if (tab === "By Allocation") return [
-    { label: "Equities (Growth+Value)", value: 45.9, color: "#5ea2ff" },
-    { label: "International", value: 17.3, color: "#ffb044" },
-    { label: "Fixed Income", value: 13.2, color: "#ff5c66" },
-    { label: "Alternatives", value: 11.0, color: "#ad62ff" },
-  ];
-  // By Source (default)
-  return [
-    { label: "From Growth Fund A", value: 24.1, color: "#5ea2ff" },
-    { label: "From Value Fund B", value: 21.8, color: "#84e27a" },
-    { label: "From International C", value: 17.3, color: "#ffb044" },
-    { label: "From Bond Fund D", value: 13.2, color: "#ff5c66" },
-    { label: "From Real Estate E", value: 11.0, color: "#ad62ff" },
-  ];
+  const fromStage = (stage: string, colorOverride?: string): AttributionRow[] =>
+    odysseyDemo.nodes.filter((n) => n.stage === stage).map((n) => ({ label: n.label, value: n.value, color: colorOverride ?? n.color }));
+  if (tab === "By Activity") return fromStage("activity", "#b66dff");
+  if (tab === "By Outcome") return fromStage("outcome");
+  if (tab === "By Allocation") {
+    const alloc = fromStage("allocation");
+    // Group into broad asset-class buckets for a more readable "by allocation" view.
+    const byId = (id: string) => alloc.find((a) => odysseyDemo.nodes.find((n) => n.label === a.label)?.id === id);
+    const growth = byId("growth");
+    const value = byId("value");
+    const intl = byId("intl");
+    const bond = byId("bond");
+    const real = byId("realEstate");
+    return [
+      growth && value ? { label: "Equities (Growth+Value)", value: growth.value + value.value, color: "#5ea2ff" } : null,
+      intl ? { label: "International", value: intl.value, color: "#ffb044" } : null,
+      bond ? { label: "Fixed Income", value: bond.value, color: "#ff5c66" } : null,
+      real ? { label: "Alternatives", value: real.value, color: "#ad62ff" } : null,
+    ].filter((r): r is AttributionRow => r !== null);
+  }
+  // By Source (default) — prefix each allocation with "From "
+  return fromStage("allocation").map((r) => ({ ...r, label: `From ${r.label}` }));
 }
 
 const WIDTH = 1600;
@@ -410,7 +423,7 @@ function LeftSidebar() {
           ))}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6, display: "flex", justifyContent: "space-between", fontSize: 10 }}>
             <span style={{ color: "#7890ad" }}>Total</span>
-            <span style={{ color: "#eef6ff", fontWeight: 800 }}>$87.4M</span>
+            <span style={{ color: "#eef6ff", fontWeight: 800 }}>{fmtMoney(getNodeValue("source"))}</span>
             <span style={{ color: "#7890ad" }}>100%</span>
           </div>
         </div>
@@ -482,14 +495,29 @@ function RightSidebar({ overrides, setOverrides }: { overrides: Record<string, n
   const totalActual = families.reduce((s, f) => s + f.value, 0);
   const totalScenario = families.reduce((s, f) => s + effectiveScenario(f, overrides[f.id]), 0);
   const impactDelta = totalScenario - totalActual;
-  const paths = [
-    { label: "From Growth Fund A", color: "#5ea2ff", pct: "30.2%", val: "$27.8M", delta: "+1.9M", up: true },
-    { label: "From Value Fund B", color: "#84e27a", pct: "25.1%", val: "$23.1M", delta: "-0.8M", up: false },
-    { label: "From Intl C", color: "#ffb044", pct: "19.3%", val: "$17.8M", delta: "+0.4M", up: true },
-    { label: "From Bond Fund D", color: "#ff5c66", pct: "14.7%", val: "$13.5M", delta: "-0.6M", up: false },
-    { label: "From Real Estate E", color: "#ad62ff", pct: "7.2%", val: "$6.6M", delta: "+0.4M", up: true },
-    { label: "From Other", color: "#8da3bf", pct: "3.5%", val: "$3.3M", delta: "-0.2M", up: false },
-  ];
+  // Derive path contribution from family -> endingNav proportional attribution.
+  const endingNav = getNodeValue("endingNav");
+  const sourceValue = getNodeValue("source");
+  const familyContribution = (f: FlowFamily) => (f.value / sourceValue) * endingNav;
+  const familyContributionScenario = (f: FlowFamily) => (effectiveScenario(f, overrides[f.id]) / sourceValue) * endingNav;
+  const paths = families.map((f) => {
+    const contrib = familyContribution(f);
+    const scenContrib = familyContributionScenario(f);
+    const delta = scenContrib - contrib;
+    return {
+      label: `From ${f.label}`,
+      color: f.color,
+      pct: `${((contrib / endingNav) * 100).toFixed(1)}%`,
+      val: fmtMoney(contrib),
+      delta: `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}M`,
+      up: delta >= 0,
+    };
+  });
+  const othersContrib = endingNav - families.reduce((s, f) => s + familyContribution(f), 0);
+  if (Math.abs(othersContrib) > 0.1) {
+    paths.push({ label: "From Other", color: "#8da3bf", pct: `${((othersContrib / endingNav) * 100).toFixed(1)}%`, val: fmtMoney(othersContrib), delta: "+0.0M", up: true });
+  }
+  const totalContribDelta = families.reduce((s, f) => s + (familyContributionScenario(f) - familyContribution(f)), 0);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
       <Panel title="Path Contribution" right={<span style={{ fontSize: 9, color: "#7890ad" }}>(to Ending NAV)</span>}>
@@ -509,8 +537,8 @@ function RightSidebar({ overrides, setOverrides }: { overrides: Record<string, n
           ))}
           <div style={{ borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 6, display: "flex", justifyContent: "space-between", fontSize: 11 }}>
             <span style={{ color: "#7890ad" }}>100%</span>
-            <span style={{ color: "#eef6ff", fontWeight: 800 }}>$92.1M</span>
-            <span style={{ color: "#84e27a", fontWeight: 700 }}>+1.1M</span>
+            <span style={{ color: "#eef6ff", fontWeight: 800 }}>{fmtMoney(endingNav)}</span>
+            <span style={{ color: totalContribDelta >= 0 ? "#84e27a" : "#ff5c66", fontWeight: 700 }}>{totalContribDelta >= 0 ? "+" : ""}{totalContribDelta.toFixed(1)}M</span>
           </div>
         </div>
       </Panel>
@@ -795,8 +823,8 @@ function CenterFlow({ onSelect, overrides }: { onSelect: (id: string) => void; o
           <div style={{ width: 30, height: 30, borderRadius: 8, background: "rgba(132,226,122,0.16)", border: "1px solid rgba(132,226,122,0.3)", display: "flex", alignItems: "center", justifyContent: "center", color: "#84e27a" }}>{Icon.Users("#84e27a")}</div>
           <div style={{ color: "#f4fff4", fontSize: 13, fontWeight: 800, marginTop: 10, lineHeight: 1.2 }}>Total<br/>Contributions</div>
           <div style={{ marginTop: "auto" }}>
-            <div style={{ color: "white", fontSize: 28, fontWeight: 900, letterSpacing: -0.8 }}>$87.4M</div>
-            <div style={{ color: "#84e27a", fontSize: 13, fontWeight: 800 }}>100%</div>
+            <div style={{ color: "white", fontSize: 28, fontWeight: 900, letterSpacing: -0.8 }}>{fmtMoney(getNodeValue("source"))}</div>
+            <div style={{ color: "#84e27a", fontSize: 13, fontWeight: 800 }}>{getNodePct("source", "100%")}</div>
           </div>
         </div>
 
@@ -830,83 +858,113 @@ function CenterFlow({ onSelect, overrides }: { onSelect: (id: string) => void; o
         <div style={{ position: "absolute", left: 660, top: 138, width: 205, padding: "8px 9px 10px", borderRadius: 12, border: "1px solid rgba(182,109,255,0.42)", background: "rgba(20,12,36,0.56)", boxShadow: "0 0 24px rgba(182,109,255,0.12), inset 0 0 32px rgba(182,109,255,0.04)", pointerEvents: "auto" }}>
           <div style={{ fontSize: 11, color: "#b66dff", fontWeight: 900, letterSpacing: 1.2, textAlign: "center", marginBottom: 7 }}>ACTIVITY</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <ActivityRow icon={Icon.Scale("#b66dff")} title="Rebalancing" value="$28.7M" pct="32.9%" velocity="1.33x" color="#b66dff" onSelect={onSelect} nodeId="rebalancing" />
-            <ActivityRow icon={Icon.Gift("#b66dff")} title="Dividends" value="$19.3M" pct="22.1%" velocity="0.85x" color="#b66dff" onSelect={onSelect} nodeId="dividends" />
-            <ActivityRow icon={Icon.Percent("#b66dff")} title="Interest" value="$15.8M" pct="18.1%" velocity="1.02x" color="#b66dff" onSelect={onSelect} nodeId="interest" />
-            <ActivityRow icon={Icon.Coins("#b66dff")} title="Fees" value="$8.6M" pct="9.9%" velocity="0.78x" color="#b66dff" onSelect={onSelect} nodeId="fees" />
-            <ActivityRow icon={Icon.Ellipsis("#b66dff")} title="Other (Ops)" value="$14.7M" pct="16.9%" velocity="0.91x" color="#b66dff" onSelect={onSelect} nodeId="other" />
+            <ActivityRow icon={Icon.Scale("#b66dff")} title="Rebalancing" value={fmtMoney(getNodeValue("rebalancing"))} pct={getNodePct("rebalancing")} velocity="1.33x" color="#b66dff" onSelect={onSelect} nodeId="rebalancing" />
+            <ActivityRow icon={Icon.Gift("#b66dff")} title="Dividends" value={fmtMoney(getNodeValue("dividends"))} pct={getNodePct("dividends")} velocity="0.85x" color="#b66dff" onSelect={onSelect} nodeId="dividends" />
+            <ActivityRow icon={Icon.Percent("#b66dff")} title="Interest" value={fmtMoney(getNodeValue("interest"))} pct={getNodePct("interest")} velocity="1.02x" color="#b66dff" onSelect={onSelect} nodeId="interest" />
+            <ActivityRow icon={Icon.Coins("#b66dff")} title="Fees" value={fmtMoney(getNodeValue("fees"))} pct={getNodePct("fees")} velocity="0.78x" color="#b66dff" onSelect={onSelect} nodeId="fees" />
+            <ActivityRow icon={Icon.Ellipsis("#b66dff")} title="Other (Ops)" value={fmtMoney(getNodeValue("other"))} pct={getNodePct("other")} velocity="0.91x" color="#b66dff" onSelect={onSelect} nodeId="other" />
           </div>
         </div>
 
         {/* OUTCOMES container with donut + labels merged */}
-        <div onClick={() => onSelect("invested")} style={{ position: "absolute", left: 910, top: 138, width: 175, padding: "8px 10px 10px", borderRadius: 12, border: "1px solid rgba(255,176,68,0.42)", background: "rgba(30,22,10,0.62)", boxShadow: "0 0 24px rgba(255,176,68,0.12)", textAlign: "center", pointerEvents: "auto", cursor: "pointer" }}>
-          <div style={{ fontSize: 11, color: "#ffb044", fontWeight: 900, letterSpacing: 1.2, marginBottom: 6 }}>OUTCOMES</div>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
-            <Donut segments={[{ color: "#5ea2ff", value: 76.8 }, { color: "#ffb044", value: 18.9 }, { color: "#ff5c66", value: 4.3 }]} centerLabel="$67.2M" centerSub="Invested" size={104} inner={64} />
-          </div>
-          <div style={{ fontSize: 10, color: "#8ba2c0", textAlign: "left" }}>Invested Value</div>
-          <div style={{ fontSize: 18, color: "white", fontWeight: 900, textAlign: "left" }}>$67.2M</div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#7890ad" }}>
-            <span style={{ color: "#ffb044", fontWeight: 800 }}>76.8%</span>
-            <span>Utilization: 88%</span>
-          </div>
-          <div style={{ fontSize: 9, color: "#7890ad", textAlign: "left", marginTop: 2 }}>Scenario: $69.8M (+3.9%)</div>
-        </div>
+        {(() => {
+          const invested = getNodeValue("invested");
+          const cash = getNodeValue("cash");
+          const outflows = getNodeValue("outflows");
+          const investedDelta = getNodeDelta("invested");
+          const cashDelta = getNodeDelta("cash");
+          const outflowsDelta = getNodeDelta("outflows");
+          const investedScen = invested * (1 + (investedDelta ?? 0) / 100);
+          const cashScen = cash * (1 + (cashDelta ?? 0) / 100);
+          const outflowsScen = outflows * (1 + (outflowsDelta ?? 0) / 100);
+          return (
+            <>
+              <div onClick={() => onSelect("invested")} style={{ position: "absolute", left: 910, top: 138, width: 175, padding: "8px 10px 10px", borderRadius: 12, border: "1px solid rgba(255,176,68,0.42)", background: "rgba(30,22,10,0.62)", boxShadow: "0 0 24px rgba(255,176,68,0.12)", textAlign: "center", pointerEvents: "auto", cursor: "pointer" }}>
+                <div style={{ fontSize: 11, color: "#ffb044", fontWeight: 900, letterSpacing: 1.2, marginBottom: 6 }}>OUTCOMES</div>
+                <div style={{ display: "flex", justifyContent: "center", marginBottom: 4 }}>
+                  <Donut segments={[{ color: "#5ea2ff", value: invested }, { color: "#ffb044", value: cash }, { color: "#ff5c66", value: outflows }]} centerLabel={fmtMoney(invested)} centerSub="Invested" size={104} inner={64} />
+                </div>
+                <div style={{ fontSize: 10, color: "#8ba2c0", textAlign: "left" }}>Invested Value</div>
+                <div style={{ fontSize: 18, color: "white", fontWeight: 900, textAlign: "left" }}>{fmtMoney(invested)}</div>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: "#7890ad" }}>
+                  <span style={{ color: "#ffb044", fontWeight: 800 }}>{getNodePct("invested")}</span>
+                  <span>Utilization: 88%</span>
+                </div>
+                <div style={{ fontSize: 9, color: "#7890ad", textAlign: "left", marginTop: 2 }}>Scenario: {fmtMoney(investedScen)} ({fmtPct(investedDelta ?? 0, 1, true)})</div>
+              </div>
 
-        <div onClick={() => onSelect("cash")} style={{ position: "absolute", left: 910, top: 420, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,176,68,0.28)", background: "rgba(30,22,10,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(255,176,68,0.18)", color: "#ffb044", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.Refresh("#ffb044")}</div>
-            <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Cash Returned</div>
-          </div>
-          <div style={{ fontSize: 18, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.4 }}>$16.5M</div>
-          <div style={{ fontSize: 10, color: "#ffb044", fontWeight: 800 }}>18.9%</div>
-          <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Scenario: $18.1M (+9.7%)</div>
-        </div>
+              <div onClick={() => onSelect("cash")} style={{ position: "absolute", left: 910, top: 420, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,176,68,0.28)", background: "rgba(30,22,10,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(255,176,68,0.18)", color: "#ffb044", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.Refresh("#ffb044")}</div>
+                  <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Cash Returned</div>
+                </div>
+                <div style={{ fontSize: 18, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.4 }}>{fmtMoney(cash)}</div>
+                <div style={{ fontSize: 10, color: "#ffb044", fontWeight: 800 }}>{getNodePct("cash")}</div>
+                <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Scenario: {fmtMoney(cashScen)} ({fmtPct(cashDelta ?? 0, 1, true)})</div>
+              </div>
 
-        <div onClick={() => onSelect("outflows")} style={{ position: "absolute", left: 910, top: 508, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,90,120,0.28)", background: "rgba(30,10,14,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(255,90,120,0.18)", color: "#ff5c66", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.ArrowDown("#ff5c66")}</div>
-            <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Net Outflows</div>
-          </div>
-          <div style={{ fontSize: 18, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.4 }}>$3.7M</div>
-          <div style={{ fontSize: 10, color: "#ff5c66", fontWeight: 800 }}>4.2%</div>
-          <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Scenario: $3.1M (-16.2%)</div>
-        </div>
+              <div onClick={() => onSelect("outflows")} style={{ position: "absolute", left: 910, top: 508, width: 175, padding: "7px 10px", borderRadius: 8, border: "1px solid rgba(255,90,120,0.28)", background: "rgba(30,10,14,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(255,90,120,0.18)", color: "#ff5c66", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.ArrowDown("#ff5c66")}</div>
+                  <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Net Outflows</div>
+                </div>
+                <div style={{ fontSize: 18, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.4 }}>{fmtMoney(outflows)}</div>
+                <div style={{ fontSize: 10, color: "#ff5c66", fontWeight: 800 }}>{getNodePct("outflows")}</div>
+                <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Scenario: {fmtMoney(outflowsScen)} ({fmtPct(outflowsDelta ?? 0, 1, true)})</div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* RESULTS column (tightened spacing) */}
-        <div onClick={() => onSelect("endingNav")} style={{ position: "absolute", left: 1145, top: 138, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.42)", background: "rgba(10,28,28,0.64)", boxShadow: "0 0 24px rgba(77,225,210,0.12)", pointerEvents: "auto", cursor: "pointer" }}>
-          <div style={{ fontSize: 11, color: "#4de1d2", fontWeight: 900, letterSpacing: 1.2, textAlign: "center", marginBottom: 6 }}>RESULTS</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.TrendUp("#4de1d2")}</div>
-            <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Ending NAV</div>
-          </div>
-          <div style={{ fontSize: 22, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.6 }}>$92.1M</div>
-          <div style={{ fontSize: 11, color: "#84e27a", fontWeight: 800 }}>+5.4%</div>
-          <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>IRR: 11.6%</div>
-          <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: $69.8M (+7.1%)</div>
-        </div>
+        {(() => {
+          const endingNav = getNodeValue("endingNav");
+          const totalReturn = getNodeValue("totalReturn");
+          const distributions = getNodeValue("distributions");
+          const endingNavDelta = getNodeDelta("endingNav");
+          const totalReturnDelta = getNodeDelta("totalReturn");
+          const distributionsDelta = getNodeDelta("distributions");
+          const navScen = endingNav * (1 + (endingNavDelta ?? 0) / 100);
+          const retScen = totalReturn * (1 + (totalReturnDelta ?? 0) / 100);
+          const distScen = distributions * (1 + (distributionsDelta ?? 0) / 100);
+          return (
+            <>
+              <div onClick={() => onSelect("endingNav")} style={{ position: "absolute", left: 1145, top: 138, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.42)", background: "rgba(10,28,28,0.64)", boxShadow: "0 0 24px rgba(77,225,210,0.12)", pointerEvents: "auto", cursor: "pointer" }}>
+                <div style={{ fontSize: 11, color: "#4de1d2", fontWeight: 900, letterSpacing: 1.2, textAlign: "center", marginBottom: 6 }}>RESULTS</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.TrendUp("#4de1d2")}</div>
+                  <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Ending NAV</div>
+                </div>
+                <div style={{ fontSize: 22, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.6 }}>{fmtMoney(endingNav)}</div>
+                <div style={{ fontSize: 11, color: "#84e27a", fontWeight: 800 }}>{getNodePct("endingNav")}</div>
+                <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>IRR: 11.6%</div>
+                <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: {fmtMoney(navScen)} ({fmtPct(endingNavDelta ?? 0, 1, true)})</div>
+              </div>
 
-        <div onClick={() => onSelect("totalReturn")} style={{ position: "absolute", left: 1145, top: 300, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.TrendUp("#4de1d2")}</div>
-            <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Total Return</div>
-          </div>
-          <div style={{ fontSize: 22, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.6 }}>$9.6M</div>
-          <div style={{ fontSize: 11, color: "#84e27a", fontWeight: 800 }}>11.6%</div>
-          <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>IRR: 11.6%</div>
-          <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: $10.8M (+12.5%)</div>
-        </div>
+              <div onClick={() => onSelect("totalReturn")} style={{ position: "absolute", left: 1145, top: 300, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.TrendUp("#4de1d2")}</div>
+                  <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Total Return</div>
+                </div>
+                <div style={{ fontSize: 22, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.6 }}>{fmtMoney(totalReturn)}</div>
+                <div style={{ fontSize: 11, color: "#84e27a", fontWeight: 800 }}>{getNodePct("totalReturn")}</div>
+                <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>IRR: 11.6%</div>
+                <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: {fmtMoney(retScen)} ({fmtPct(totalReturnDelta ?? 0, 1, true)})</div>
+              </div>
 
-        <div onClick={() => onSelect("distributions")} style={{ position: "absolute", left: 1145, top: 430, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-            <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.DollarSign("#4de1d2")}</div>
-            <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Distributions</div>
-          </div>
-          <div style={{ fontSize: 22, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.6 }}>$12.8M</div>
-          <div style={{ fontSize: 11, color: "#84e27a", fontWeight: 800 }}>14.6%</div>
-          <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Yield: 4.8%</div>
-          <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: $14.0M (+9.4%)</div>
-        </div>
+              <div onClick={() => onSelect("distributions")} style={{ position: "absolute", left: 1145, top: 430, width: 200, padding: "8px 12px", borderRadius: 10, border: "1px solid rgba(77,225,210,0.28)", background: "rgba(10,28,28,0.6)", pointerEvents: "auto", cursor: "pointer" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <div style={{ width: 18, height: 18, borderRadius: 4, background: "rgba(77,225,210,0.18)", color: "#4de1d2", display: "flex", alignItems: "center", justifyContent: "center" }}>{Icon.DollarSign("#4de1d2")}</div>
+                  <div style={{ fontSize: 11, color: "#eef6ff", fontWeight: 800 }}>Distributions</div>
+                </div>
+                <div style={{ fontSize: 22, color: "white", fontWeight: 900, marginTop: 3, letterSpacing: -0.6 }}>{fmtMoney(distributions)}</div>
+                <div style={{ fontSize: 11, color: "#84e27a", fontWeight: 800 }}>{getNodePct("distributions")}</div>
+                <div style={{ fontSize: 9, color: "#7890ad", marginTop: 2 }}>Yield: 4.8%</div>
+                <div style={{ fontSize: 9, color: "#7890ad" }}>Scenario: {fmtMoney(distScen)} ({fmtPct(distributionsDelta ?? 0, 1, true)})</div>
+              </div>
+            </>
+          );
+        })()}
 
         {/* R markers — placed on actual flow paths */}
         {rMarkers.map((m, i) => <RCircle key={i} marker={m} active={selectedR === i} onClick={() => setSelectedR((s) => (s === i ? null : i))} />)}
@@ -1160,15 +1218,27 @@ function SummaryRow({ overrides }: { overrides: Record<string, number> }) {
   const totalScenario = families.reduce((s, f) => s + effectiveScenario(f, overrides[f.id]), 0);
   const impactDelta = totalScenario - totalActual;
   const scenarioActive = Object.values(overrides).some((v) => v !== 0 && v !== undefined);
-  const baselinePerf = "+$4.7M";
-  const baselinePerfPct = "+5.4% (IRR)";
-  const scenarioPerf = (impactDelta >= 0 ? "+" : "") + "$" + impactDelta.toFixed(1) + "M";
-  const scenarioPerfPct = (impactDelta >= 0 ? "+" : "") + ((impactDelta / totalActual) * 100).toFixed(1) + "% (scenario)";
+  // Derive aggregate metrics from demoOdyssey instead of hardcoded strings.
+  const sourceValue = getNodeValue("source");
+  const cashReturned = getNodeValue("cash");
+  const outflows = getNodeValue("outflows");
+  const totalRedemptions = cashReturned + outflows;
+  const netCashFlow = sourceValue - totalRedemptions;
+  const realizedPL = getNodeValue("totalReturn");
+  const investedValue = getNodeValue("invested");
+  const endingNav = getNodeValue("endingNav");
+  const baselinePerfDelta = endingNav - sourceValue;
+  const baselinePerfPctVal = (baselinePerfDelta / sourceValue) * 100;
+  const baselinePerf = (baselinePerfDelta >= 0 ? "+" : "") + fmtMoney(baselinePerfDelta);
+  const baselinePerfPct = `${fmtPct(baselinePerfPctVal, 1, true)} (IRR)`;
+  const scenarioPerf = (impactDelta >= 0 ? "+" : "") + fmtMoney(impactDelta);
+  const scenarioPerfPct = `${fmtPct((impactDelta / totalActual) * 100, 1, true)} (scenario)`;
+  const pctOfSource = (v: number) => `${((v / sourceValue) * 100).toFixed(1)}%`;
   const items = [
-    { icon: Icon.Users, label: "Total Contributions", value: "$87.4M", sub: "100%", color: "#84e27a" },
-    { icon: Icon.Refresh, label: "Total Redemptions", value: "$29.3M", sub: "33.6%", color: "#ffb044" },
-    { icon: Icon.ArrowUpRight, label: "Net Cash Flow", value: "$58.1M", sub: "66.4%", color: "#5ea2ff" },
-    { icon: Icon.TrendUp, label: "Realized P&L", value: "$9.6M", sub: "11.6% of Invested", color: "#b66dff" },
+    { icon: Icon.Users, label: "Total Contributions", value: fmtMoney(sourceValue), sub: "100%", color: "#84e27a" },
+    { icon: Icon.Refresh, label: "Total Redemptions", value: fmtMoney(totalRedemptions), sub: pctOfSource(totalRedemptions), color: "#ffb044" },
+    { icon: Icon.ArrowUpRight, label: "Net Cash Flow", value: fmtMoney(netCashFlow), sub: pctOfSource(netCashFlow), color: "#5ea2ff" },
+    { icon: Icon.TrendUp, label: "Realized P&L", value: fmtMoney(realizedPL), sub: `${fmtPct((realizedPL / investedValue) * 100)} of Invested`, color: "#b66dff" },
     { icon: Icon.Calendar, label: "Time Period", value: "YTD 2025", sub: "Jan 1 – May 31, 2025", color: "#5fe7ff" },
     { icon: Icon.BarChart, label: "Net Performance", value: scenarioActive ? scenarioPerf : baselinePerf, sub: scenarioActive ? scenarioPerfPct : baselinePerfPct, color: scenarioActive ? (impactDelta >= 0 ? "#84e27a" : "#ff5c66") : "#4de1d2" },
     { icon: Icon.Check, label: "System Reconciliation", value: "Balanced", sub: "In = Out + Residual", color: "#84e27a" },
