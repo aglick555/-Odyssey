@@ -1,7 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import CinematicFlowView from "../cinematic/CinematicFlowView";
-import { odysseyDemo } from "../data/demoOdyssey";
 import { FlowRenderer } from "./FlowWebGL";
+import {
+  getActiveDataset,
+  getActiveSource,
+  setActiveDataset,
+  resetToDemo,
+  useActiveDataset,
+  validateDataset,
+  exportActiveDataset,
+} from "./datasetSource";
 
 // Map v17 family ids to demoOdyssey node ids where they differ.
 const V17_TO_DEMO: Record<string, string> = {
@@ -18,7 +26,7 @@ function toDemoId(v17Id: string) { return V17_TO_DEMO[v17Id] ?? v17Id; }
 // helpers so a single edit to demoOdyssey.ts propagates through the whole
 // dashboard.
 
-function getNode(id: string) { return odysseyDemo.nodes.find((n) => n.id === id); }
+function getNode(id: string) { return getActiveDataset().nodes.find((n) => n.id === id); }
 function getNodeValue(id: string, fallback = 0): number { return getNode(id)?.value ?? fallback; }
 function getNodePct(id: string, fallback = ""): string { return getNode(id)?.pctLabel ?? fallback; }
 function getNodeDelta(id: string): number | undefined { return getNode(id)?.deltaPct; }
@@ -27,8 +35,8 @@ function fmtPct(value: number, digits = 1, signed = false): string {
   const sign = signed && value > 0 ? "+" : "";
   return `${sign}${value.toFixed(digits)}%`;
 }
-function flowsInto(id: string) { return odysseyDemo.flows.filter((f) => f.to === id); }
-function flowsOutOf(id: string) { return odysseyDemo.flows.filter((f) => f.from === id); }
+function flowsInto(id: string) { return getActiveDataset().flows.filter((f) => f.to === id); }
+function flowsOutOf(id: string) { return getActiveDataset().flows.filter((f) => f.from === id); }
 
 // Forward-propagate "share of starting capital" from a node through the
 // directed graph. Returns a map { nodeId: share }, where share is the
@@ -40,7 +48,7 @@ function traceAttributionFrom(startId: string): Record<string, number> {
   const startNode = getNode(startId);
   const startIdx = startNode ? STAGE_ORDER.indexOf(startNode.stage) : 0;
   for (let s = startIdx; s < STAGE_ORDER.length; s += 1) {
-    const stageNodes = odysseyDemo.nodes.filter((n) => n.stage === STAGE_ORDER[s]);
+    const stageNodes = getActiveDataset().nodes.filter((n) => n.stage === STAGE_ORDER[s]);
     for (const node of stageNodes) {
       const inShare = shares[node.id];
       if (!inShare) continue;
@@ -61,7 +69,7 @@ function attributionDollars(sourceId: string, targetId: string): number {
   if (!src) return 0;
   return src.value * (shares[targetId] ?? 0);
 }
-function residualFlows() { return odysseyDemo.flows.filter((f) => f.residual === true); }
+function residualFlows() { return getActiveDataset().flows.filter((f) => f.residual === true); }
 
 type Mode = "actual" | "robust" | "delta";
 type Quality = "safe" | "balanced" | "cinematic";
@@ -99,13 +107,13 @@ type AttributionRow = { label: string; value: number; color: string };
 
 function attributionRowsFor(tab: string): AttributionRow[] {
   const fromStage = (stage: string, colorOverride?: string): AttributionRow[] =>
-    odysseyDemo.nodes.filter((n) => n.stage === stage).map((n) => ({ label: n.label, value: n.value, color: colorOverride ?? n.color }));
+    getActiveDataset().nodes.filter((n) => n.stage === stage).map((n) => ({ label: n.label, value: n.value, color: colorOverride ?? n.color }));
   if (tab === "By Activity") return fromStage("activity", "#b66dff");
   if (tab === "By Outcome") return fromStage("outcome");
   if (tab === "By Allocation") {
     const alloc = fromStage("allocation");
     // Group into broad asset-class buckets for a more readable "by allocation" view.
-    const byId = (id: string) => alloc.find((a) => odysseyDemo.nodes.find((n) => n.label === a.label)?.id === id);
+    const byId = (id: string) => alloc.find((a) => getActiveDataset().nodes.find((n) => n.label === a.label)?.id === id);
     const growth = byId("growth");
     const value = byId("value");
     const intl = byId("intl");
@@ -1029,17 +1037,17 @@ function CenterFlow({ onSelect, overrides }: { onSelect: (id: string) => void; o
 // --- Node Drawer ---------------------------------------------------------
 
 function NodeDrawer({ nodeId, onClose, onNavigate }: { nodeId: string; onClose: () => void; onNavigate: (id: string) => void }) {
-  const node = odysseyDemo.nodes.find((n) => n.id === nodeId);
+  const node = getActiveDataset().nodes.find((n) => n.id === nodeId);
   if (!node) return null;
-  const feeders = odysseyDemo.flows.filter((f) => f.to === nodeId);
-  const downstream = odysseyDemo.flows.filter((f) => f.from === nodeId);
+  const feeders = getActiveDataset().flows.filter((f) => f.to === nodeId);
+  const downstream = getActiveDataset().flows.filter((f) => f.from === nodeId);
   const feederTotal = feeders.reduce((s, f) => s + f.value, 0);
   const downstreamTotal = downstream.reduce((s, f) => s + f.value, 0);
   const scenarioTotal = feeders.reduce((s, f) => s + (f.scenarioValue ?? f.value), 0);
   const scenarioDownstream = downstream.reduce((s, f) => s + (f.scenarioValue ?? f.value), 0);
-  const labelOf = (id: string) => odysseyDemo.nodes.find((n) => n.id === id)?.label ?? id;
-  const colorOf = (id: string) => odysseyDemo.nodes.find((n) => n.id === id)?.color ?? "#9fb2ca";
-  const stageOf = (id: string) => odysseyDemo.nodes.find((n) => n.id === id)?.stage ?? "";
+  const labelOf = (id: string) => getActiveDataset().nodes.find((n) => n.id === id)?.label ?? id;
+  const colorOf = (id: string) => getActiveDataset().nodes.find((n) => n.id === id)?.color ?? "#9fb2ca";
+  const stageOf = (id: string) => getActiveDataset().nodes.find((n) => n.id === id)?.stage ?? "";
   return (
     <>
       <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(2,8,16,0.55)", backdropFilter: "blur(3px)", zIndex: 100 }} />
@@ -1452,7 +1460,7 @@ const TABS = [
   { n: "Reports", i: Icon.FileText },
 ] as const;
 
-function TopBar({ tab, onTab, onCinematic }: { tab: string; onTab: (t: string) => void; onCinematic: () => void }) {
+function TopBar({ tab, onTab, onCinematic, onDataSource, dataSourceLabel }: { tab: string; onTab: (t: string) => void; onCinematic: () => void; onDataSource: () => void; dataSourceLabel: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
@@ -1474,7 +1482,10 @@ function TopBar({ tab, onTab, onCinematic }: { tab: string; onTab: (t: string) =
       </div>
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <div style={{ padding: "6px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(8,14,26,0.6)", fontSize: 11, color: "#eef6ff" }}>Jan 1 – May 31, 2025</div>
-        {[Icon.Download, Icon.Link, Icon.Help, Icon.Settings].map((I, i) => (
+        <button onClick={onDataSource} title={`Data source: ${dataSourceLabel}`} style={{ padding: "6px 10px", borderRadius: 6, border: `1px solid ${dataSourceLabel === "custom" ? "rgba(132,226,122,0.45)" : "rgba(255,255,255,0.1)"}`, background: dataSourceLabel === "custom" ? "rgba(132,226,122,0.12)" : "rgba(8,14,26,0.6)", color: dataSourceLabel === "custom" ? "#84e27a" : "#9fb2ca", cursor: "pointer", fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", gap: 6 }}>
+          {Icon.Download(dataSourceLabel === "custom" ? "#84e27a" : "#9fb2ca")} {dataSourceLabel === "custom" ? "Custom data" : "Demo data"}
+        </button>
+        {[Icon.Link, Icon.Help, Icon.Settings].map((I, i) => (
           <button key={i} style={{ width: 30, height: 30, borderRadius: 6, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(8,14,26,0.6)", color: "#9fb2ca", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>{I("#9fb2ca")}</button>
         ))}
       </div>
@@ -1653,14 +1664,14 @@ function ConstraintInspectorView() {
 }
 
 function AttributionEngineView() {
-  const allocationNodes = useMemo(() => odysseyDemo.nodes.filter((n) => n.stage === "allocation"), []);
+  const allocationNodes = useMemo(() => getActiveDataset().nodes.filter((n) => n.stage === "allocation"), []);
   const [sourceId, setSourceId] = useState<string>(allocationNodes[0]?.id ?? "growth");
   const sourceNode = getNode(sourceId);
   const shares = useMemo(() => traceAttributionFrom(sourceId), [sourceId]);
   const sourceValue = sourceNode?.value ?? 0;
 
   const stageRows = (stage: string) =>
-    odysseyDemo.nodes
+    getActiveDataset().nodes
       .filter((n) => n.stage === stage)
       .map((n) => {
         const share = shares[n.id] ?? 0;
@@ -1857,15 +1868,52 @@ export default function OdysseyV17() {
   const [tab, setTab] = useState<string>(initial.tab);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [scenarioOverrides, setScenarioOverrides] = useState<Record<string, number>>({});
+  // Subscribe to active-dataset changes so the whole tree re-renders when
+  // the user uploads/resets a dataset via the Data Source panel.
+  useActiveDataset();
+  const [dataPanelOpen, setDataPanelOpen] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const [importMsg, setImportMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  useEffect(() => { writeUrlState(view, tab); }, [view, tab]);
+  const handleFile = async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      const result = validateDataset(parsed);
+      if (!result.ok) {
+        setImportMsg({ kind: "err", text: `Invalid dataset: ${result.errors.slice(0, 2).join("; ")}${result.errors.length > 2 ? `; +${result.errors.length - 2} more` : ""}` });
+        return;
+      }
+      setActiveDataset(result.dataset, "custom");
+      setScenarioOverrides({});
+      setImportMsg({ kind: "ok", text: `Loaded "${result.dataset.title}" — ${result.dataset.nodes.length} nodes, ${result.dataset.flows.length} flows` });
+    } catch (e) {
+      setImportMsg({ kind: "err", text: `Parse failed: ${(e as Error).message}` });
+    }
+  };
+
+  useEffect(() => {
+    if (!importMsg) return;
+    const id = setTimeout(() => setImportMsg(null), 4000);
+    return () => clearTimeout(id);
+  }, [importMsg]);
 
   if (view === "cinematic") return <CinematicShell onV17={() => setView("v17")} />;
 
   return (
-    <div style={{ minHeight: "100vh", background: "#020713", color: "white", fontFamily: "Inter, Arial, sans-serif", padding: 14, boxSizing: "border-box" }}>
+    <div
+      onDragOver={(e) => { e.preventDefault(); if (!dragOver) setDragOver(true); }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragOver(false); }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragOver(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file) handleFile(file);
+      }}
+      style={{ minHeight: "100vh", background: "#020713", color: "white", fontFamily: "Inter, Arial, sans-serif", padding: 14, boxSizing: "border-box", position: "relative" }}
+    >
       <div style={{ margin: "0 auto" }}>
-        <TopBar tab={tab} onTab={setTab} onCinematic={() => setView("cinematic")} />
+        <TopBar tab={tab} onTab={setTab} onCinematic={() => setView("cinematic")} onDataSource={() => setDataPanelOpen((o) => !o)} dataSourceLabel={getActiveSource()} />
         <SubBar />
         {tab === "Flow Monitor" && <FlowMonitorView onSelect={setSelectedNode} overrides={scenarioOverrides} setOverrides={setScenarioOverrides} />}
         {tab === "Scenario Studio" && <ScenarioStudioView overrides={scenarioOverrides} setOverrides={setScenarioOverrides} />}
@@ -1880,6 +1928,60 @@ export default function OdysseyV17() {
         </div>
       </div>
       {selectedNode && <NodeDrawer nodeId={selectedNode} onClose={() => setSelectedNode(null)} onNavigate={setSelectedNode} />}
+
+      {/* Data Source panel (popover-style) */}
+      {dataPanelOpen && (
+        <>
+          <div onClick={() => setDataPanelOpen(false)} style={{ position: "fixed", inset: 0, background: "rgba(2,8,16,0.5)", backdropFilter: "blur(2px)", zIndex: 200 }} />
+          <div style={{ position: "fixed", top: 64, right: 14, width: 380, maxHeight: "calc(100vh - 80px)", overflowY: "auto", background: "#080e1a", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, boxShadow: "0 20px 60px rgba(0,0,0,0.6)", padding: 16, zIndex: 201 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+              <div style={{ fontSize: 13, fontWeight: 800, color: "#eef6ff" }}>Data Source</div>
+              <button onClick={() => setDataPanelOpen(false)} style={{ background: "transparent", border: "1px solid rgba(255,255,255,0.1)", color: "#9fb2ca", cursor: "pointer", fontSize: 14, width: 26, height: 26, borderRadius: 4 }}>×</button>
+            </div>
+            <div style={{ padding: "8px 10px", borderRadius: 6, background: getActiveSource() === "custom" ? "rgba(132,226,122,0.08)" : "rgba(94,162,255,0.08)", border: `1px solid ${getActiveSource() === "custom" ? "rgba(132,226,122,0.3)" : "rgba(94,162,255,0.3)"}`, marginBottom: 12 }}>
+              <div style={{ fontSize: 9, color: "#7890ad", letterSpacing: 0.5, textTransform: "uppercase" }}>Active</div>
+              <div style={{ fontSize: 13, fontWeight: 800, color: getActiveSource() === "custom" ? "#84e27a" : "#5ea2ff" }}>{getActiveDataset().title}</div>
+              <div style={{ fontSize: 10, color: "#9fb2ca", marginTop: 1 }}>{getActiveDataset().nodes.length} nodes · {getActiveDataset().flows.length} flows · source: {getActiveSource()}</div>
+            </div>
+
+            <label style={{ display: "block", padding: 16, border: "1.5px dashed rgba(94,162,255,0.4)", borderRadius: 8, background: "rgba(94,162,255,0.05)", textAlign: "center", cursor: "pointer", marginBottom: 8 }}>
+              <input
+                type="file"
+                accept="application/json,.json"
+                style={{ display: "none" }}
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); e.target.value = ""; }}
+              />
+              <div style={{ fontSize: 12, fontWeight: 800, color: "#5ea2ff" }}>Upload JSON file</div>
+              <div style={{ fontSize: 10, color: "#7890ad", marginTop: 3 }}>Click to browse, or drag-drop a file anywhere on the page</div>
+            </label>
+
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              <button onClick={() => exportActiveDataset()} style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.03)", color: "#9fb2ca", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Export current</button>
+              <button onClick={() => { resetToDemo(); setScenarioOverrides({}); setImportMsg({ kind: "ok", text: "Reset to demo dataset" }); }} disabled={getActiveSource() === "demo"} style={{ flex: 1, padding: "8px 10px", borderRadius: 6, border: "1px solid rgba(255,90,120,0.3)", background: "rgba(255,90,120,0.06)", color: getActiveSource() === "demo" ? "#7890ad" : "#ff5c66", fontSize: 11, fontWeight: 700, cursor: getActiveSource() === "demo" ? "not-allowed" : "pointer", opacity: getActiveSource() === "demo" ? 0.5 : 1 }}>Reset to demo</button>
+            </div>
+
+            <div style={{ fontSize: 10, color: "#7890ad", lineHeight: 1.5 }}>
+              Custom datasets persist across reloads via localStorage. The shape must match <code style={{ color: "#eaf2ff" }}>OdysseyDataset</code>: <code style={{ color: "#eaf2ff" }}>{`{ title, subtitle, stages, nodes, flows, metrics }`}</code>. Validation rejects payloads with missing keys, duplicate node ids, or flows referencing unknown nodes.
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Drag-drop overlay */}
+      {dragOver && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(94,162,255,0.18)", border: "3px dashed #5ea2ff", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, pointerEvents: "none" }}>
+          <div style={{ padding: "20px 30px", borderRadius: 10, background: "rgba(8,14,26,0.92)", border: "1px solid rgba(94,162,255,0.5)", color: "#eef6ff", fontSize: 16, fontWeight: 800 }}>
+            Drop a JSON dataset to load it
+          </div>
+        </div>
+      )}
+
+      {/* Import toast */}
+      {importMsg && (
+        <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", padding: "10px 14px", borderRadius: 8, background: importMsg.kind === "ok" ? "rgba(20,38,28,0.95)" : "rgba(38,16,20,0.95)", border: `1px solid ${importMsg.kind === "ok" ? "rgba(132,226,122,0.5)" : "rgba(255,90,120,0.5)"}`, color: importMsg.kind === "ok" ? "#9cf6a4" : "#ff8a96", fontSize: 12, fontWeight: 700, boxShadow: "0 12px 40px rgba(0,0,0,0.5)", zIndex: 400, maxWidth: 520 }}>
+          {importMsg.text}
+        </div>
+      )}
     </div>
   );
 }
